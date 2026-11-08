@@ -161,7 +161,9 @@ final class PlayerViewModel: ObservableObject {
     }
 
     private func applySpeed(_ s: Float) {
-        player.defaultRate = s
+        if #available(iOS 16.0, *) {
+            player.defaultRate = s
+        }
         if playing { player.rate = s }
     }
 

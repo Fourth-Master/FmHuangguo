@@ -40,10 +40,11 @@ struct HistoryView: View {
         .toolbar {
             if !lib.history.isEmpty {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("清空") {
+                    Button {
                         lib.clearHistory()
+                    } label: {
+                        Text("清空").foregroundColor(.red)
                     }
-                    .foregroundColor(.red)
                 }
             }
         }
