@@ -38,8 +38,8 @@ struct HistoryView: View {
         .navigationTitle("历史播放")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if !lib.history.isEmpty {
-                ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if !lib.history.isEmpty {
                     Button {
                         lib.clearHistory()
                     } label: {
