@@ -2,6 +2,11 @@ name: Build Test Minimal
 on:
   push:
     branches: [ main ]
+permissions:
+  contents: write
+concurrency:
+  group: build-ios
+  cancel-in-progress: false
 jobs:
   ping:
     runs-on: ubuntu-latest
