@@ -1,0 +1,41 @@
+name: FmHuangguo
+options:
+  bundleIdPrefix: com.fmhuangguo
+  deploymentTarget:
+    iOS: "15.4"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    ENABLE_BITCODE: NO
+targets:
+  FmHuangguo:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.4"
+    sources:
+      - path: FmHuangguo
+    info:
+      path: FmHuangguo/Info.plist
+      properties:
+        CFBundleDisplayName: Fm黄果
+        CFBundleName: FmHuangguo
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        ITSAppUsesNonExemptEncryption: false
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fmhuangguo.app
