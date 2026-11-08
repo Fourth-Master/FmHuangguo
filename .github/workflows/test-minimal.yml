@@ -3,10 +3,12 @@ on:
   push:
     branches: [ main ]
 jobs:
-  ping:
-    runs-on: macos-15
-    timeout-minutes: 40
+  build:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - run: echo ok
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install xcodegen
