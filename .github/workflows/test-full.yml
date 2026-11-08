@@ -1,0 +1,89 @@
+name: Build Test Full
+
+on:
+  push:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-ios
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: |
+          xcodegen generate
+          ls -la
+
+      - name: Build (unsigned, arm64)
+        run: |
+          set -o pipefail
+          xcodebuild -project FmHuangguo.xcodeproj \
+            -scheme FmHuangguo \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DD \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            build 2>&1 | tee build/xcodebuild.log | tail -n 80
+
+      - name: Package IPA
+        run: |
+          APP=$(find build/DD/Build/Products -type d -name "FmHuangguo.app" | head -n 1)
+          echo "APP=$APP"
+          test -n "$APP"
+          mkdir -p build/Payload
+          cp -R "$APP" build/Payload/
+          cd build
+          zip -qry FmHuangguo-1.0.0.ipa Payload
+          ls -lh FmHuangguo-1.0.0.ipa
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FmHuangguo-ipa
+          path: build/FmHuangguo-1.0.0.ipa
+          if-no-files-found: error
+
+      - name: Publish to Release (latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest build/FmHuangguo-1.0.0.ipa --clobber
+          else
+            gh release create latest build/FmHuangguo-1.0.0.ipa \
+              --title "Fm黄果 v1.0.0" \
+              --notes "Fm黄果 iOS 短剧播放器 v1.0.0（未签名 ipa，需自行签名安装）
+
+- 三条线路 + 最新地址自动测速，自动选择最快线路进入
+- 原生直连 API，自动跳过 18+ 确认
+- 分类浏览 / 关键词搜索
+- 内置播放器：倍速、选集、亮度音量手势、横竖屏
+- 播放进度记忆、历史播放记录、收藏
+- 支持 iOS 15.4+
+
+安装方式：使用 Sideloadly / AltStore / 爱思助手 等工具对 ipa 自签安装。" \
+              --latest
+          fi
+
+      - name: Make repository public (构建时公开)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X PATCH repos/$GITHUB_REPOSITORY -f private=false \
+            && echo "仓库已公开" \
+            || echo "::warning::GITHUB_TOKEN 无法修改可见性，请手动将仓库设为 Public"
