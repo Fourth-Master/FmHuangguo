@@ -33,6 +33,7 @@ jobs:
       - name: Build (unsigned, arm64)
         run: |
           set -o pipefail
+          mkdir -p build
           xcodebuild -project FmHuangguo.xcodeproj \
             -scheme FmHuangguo \
             -configuration Release \
