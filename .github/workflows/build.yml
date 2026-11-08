@@ -65,7 +65,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cat > /tmp/release-notes.md <<'NOTES'
+          cat > /tmp/notes-src.md <<'NOTES'
           Fm黄果 iOS 短剧播放器 v1.0.0（未签名 ipa，需自行签名安装）
 
           - 三条线路 + 最新地址自动测速，自动选择最快线路进入
@@ -77,7 +77,7 @@ jobs:
 
           安装方式：使用 Sideloadly / AltStore / 爱思助手 等工具对 ipa 自签安装。
           NOTES
-          sed -i 's/^  //' /tmp/release-notes.md
+          sed 's/^  //' /tmp/notes-src.md > /tmp/release-notes.md
           if gh release view latest >/dev/null 2>&1; then
             gh release upload latest build/FmHuangguo-1.0.0.ipa --clobber
           else
