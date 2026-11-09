@@ -69,6 +69,7 @@ struct SettingsView: View {
             Section(header: Text("数据")) {
                 Button {
                     URLCache.shared.removeAllCachedResponses()
+                    CryptoImageLoader.shared.clearCache()
                     cacheCleared = true
                 } label: {
                     Label("清除图片与数据缓存", systemImage: "trash")

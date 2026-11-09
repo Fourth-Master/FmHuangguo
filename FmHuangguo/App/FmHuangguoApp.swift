@@ -20,6 +20,25 @@ struct FmHuangguoApp: App {
     @StateObject private var app = AppState()
     @StateObject private var lib = LibraryStore.shared
 
+    init() {
+        // 底部 TabBar / 导航栏不透明背景（修复 iOS 15 半透明导致的"全透明"观感）
+        let tabAppearance = UITabBarAppearance()
+        tabAppearance.configureWithOpaqueBackground()
+        tabAppearance.backgroundColor = UIColor.systemBackground
+        UITabBar.appearance().standardAppearance = tabAppearance
+        if #available(iOS 15.0, *) {
+            UITabBar.appearance().scrollEdgeAppearance = tabAppearance
+        }
+        let navAppearance = UINavigationBarAppearance()
+        navAppearance.configureWithOpaqueBackground()
+        navAppearance.backgroundColor = UIColor.systemBackground
+        UINavigationBar.appearance().standardAppearance = navAppearance
+        UINavigationBar.appearance().compactAppearance = navAppearance
+        if #available(iOS 15.0, *) {
+            UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

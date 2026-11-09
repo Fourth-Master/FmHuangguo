@@ -22,6 +22,8 @@ final class PlayerViewModel: ObservableObject {
     private var endObserver: NSObjectProtocol?
     private var statusSub: AnyCancellable?
     private var lastSaveAt = Date.distantPast
+    /// seek 未完成期间锁住 tick 对 current 的覆盖（修复滑动快进后时间卡住/回跳）
+    var scrubbingTarget: Double?
 
     let speeds: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
 
@@ -150,8 +152,16 @@ final class PlayerViewModel: ObservableObject {
     func seek(to t: Double) {
         let target = max(0, min(duration, t))
         current = target
+        scrubbingTarget = target
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600),
-                    toleranceBefore: .zero, toleranceAfter: .zero)
+                    toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                // seek 完成后以播放器实际时间为准，并允许 tick 恢复更新
+                self.current = CMTimeGetSeconds(self.player.currentTime())
+                if self.scrubbingTarget == target { self.scrubbingTarget = nil }
+            }
+        }
         saveProgress()
     }
 
@@ -186,7 +196,10 @@ final class PlayerViewModel: ObservableObject {
 
     private func tick(_ time: CMTime) {
         let sec = CMTimeGetSeconds(time)
-        if sec.isFinite, sec >= 0 { current = sec }
+        // seek 进行中不覆盖 UI 时间，避免卡住/回跳
+        if scrubbingTarget == nil, sec.isFinite, sec >= 0 {
+            current = sec
+        }
         if let item = player.currentItem, item.duration.isNumeric {
             let d = CMTimeGetSeconds(item.duration)
             if d.isFinite, d > 0 { duration = d }
@@ -262,6 +275,10 @@ struct PlayerScreen: View {
     enum DragMode: Equatable {
         case none, brightness, volume, seek
     }
+
+    // 长按倍速
+    @State private var longPressActive = false
+    @State private var speedBeforeLongPress: Float = 1.0
 
     init(detail: DramaDetail, startEp: Int) {
         self.detail = detail
@@ -343,7 +360,8 @@ struct PlayerScreen: View {
         .onTapGesture(count: 1) {
             flashControls()
         }
-        .gesture(dragGesture(width: width))
+        .simultaneousGesture(longPressGesture)
+        .simultaneousGesture(dragGesture(width: width))
     }
 
     // MARK: 控制层
@@ -441,8 +459,7 @@ struct PlayerScreen: View {
                         Task { await vm.seek(to: target) }
                         flashControls()
                     }
-                }
-                .accentColor(.white)
+                }                .accentColor(.white)
 
                 Text(fmtTime(vm.duration))
                     .font(.system(size: 11))
@@ -633,6 +650,35 @@ struct PlayerScreen: View {
 
     // MARK: 手势
 
+    /// 长按 2x 倍速播放（松开恢复原速）
+    private var longPressGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.6)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onChanged { value in
+                switch value {
+                case .first(true):
+                    if !longPressActive {
+                        longPressActive = true
+                        speedBeforeLongPress = vm.speed
+                        vm.setSpeed(2.0)
+                        hudText = "2x 倍速播放中"
+                        hudVisible = true
+                    }
+                case .second(true, _):
+                    break
+                default:
+                    break
+                }
+            }
+            .onEnded { _ in
+                if longPressActive {
+                    longPressActive = false
+                    vm.setSpeed(speedBeforeLongPress)
+                    hudVisible = false
+                }
+            }
+    }
+
     private func dragGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 14)
             .onChanged { v in
@@ -682,6 +728,8 @@ struct PlayerScreen: View {
                 }
                 dragMode = .none
                 hudVisible = false
+                // 手势结束后立刻退出 scrub 状态，恢复跟随播放器实时时间
+                scrubbing = false
             }
     }
 

@@ -12,6 +12,8 @@ struct PlayRecord: Codable, Identifiable {
     var position: Double
     var duration: Double
     var updatedAt: Date
+    /// 已播放时站点显示的总集数（用于检测"已更新至X集"）
+    var seenTotalEpisodes: Int
 }
 
 struct FavoriteItem: Codable, Identifiable {
@@ -22,6 +24,8 @@ struct FavoriteItem: Codable, Identifiable {
     var totalEpisodes: Int
     var isFinished: Bool
     var addedAt: Date
+    /// 收藏时站点显示的总集数（用于检测更新）
+    var markedTotalEpisodes: Int
 }
 
 struct LibraryData: Codable {
@@ -76,10 +80,45 @@ final class LibraryStore: ObservableObject {
         let rec = PlayRecord(dramaId: dramaId, title: title, cover: cover,
                              epNum: epNum, epVideoId: epVideoId,
                              position: max(0, position), duration: max(0, duration),
-                             updatedAt: Date())
+                             updatedAt: Date(), seenTotalEpisodes: 0)
         history.insert(rec, at: 0)
         if history.count > 200 { history = Array(history.prefix(200)) }
         save()
+    }
+
+    /// 播放/进入详情时记录当时的总集数（作为更新检测基准）
+    func markSeenEpisodeCount(dramaId: Int, totalEpisodes: Int) {
+        guard let idx = history.firstIndex(where: { $0.dramaId == dramaId }) else { return }
+        if history[idx].seenTotalEpisodes != totalEpisodes {
+            history[idx].seenTotalEpisodes = totalEpisodes
+            save()
+        }
+    }
+
+    /// 历史条目是否有更新：基准集数 > 0 且当前集数更大
+    func historyHasUpdate(_ rec: PlayRecord, currentTotal: Int) -> Bool {
+        rec.seenTotalEpisodes > 0 && currentTotal > rec.seenTotalEpisodes
+    }
+
+    /// 收藏条目是否有更新
+    func favoriteHasUpdate(_ fav: FavoriteItem, currentTotal: Int) -> Bool {
+        fav.markedTotalEpisodes > 0 && currentTotal > fav.markedTotalEpisodes
+    }
+
+    /// 进入详情后清除更新标记：历史与收藏基准同步刷成当前集数（一方清除即双方清除）
+    func clearUpdateBadge(dramaId: Int, currentTotalEpisodes: Int) {
+        var changed = false
+        if let idx = history.firstIndex(where: { $0.dramaId == dramaId }),
+           history[idx].seenTotalEpisodes != currentTotalEpisodes {
+            history[idx].seenTotalEpisodes = currentTotalEpisodes
+            changed = true
+        }
+        if let idx = favorites.firstIndex(where: { $0.dramaId == dramaId }),
+           favorites[idx].markedTotalEpisodes != currentTotalEpisodes {
+            favorites[idx].markedTotalEpisodes = currentTotalEpisodes
+            changed = true
+        }
+        if changed { save() }
     }
 
     func removeHistory(dramaId: Int) {
@@ -108,7 +147,7 @@ final class LibraryStore: ObservableObject {
         }
         let item = FavoriteItem(dramaId: dramaId, title: title, cover: cover,
                                 totalEpisodes: totalEpisodes, isFinished: isFinished,
-                                addedAt: Date())
+                                addedAt: Date(), markedTotalEpisodes: totalEpisodes)
         favorites.insert(item, at: 0)
         save()
         return true

@@ -10,6 +10,9 @@ struct HistoryView: View {
     @State private var showPlayer = false
     @State private var openError: String?
     @State private var showOpenError = false
+    /// 当前各剧集最新总集数（dramaId -> total），用于"已更新至X集"红字
+    @State private var freshTotals: [Int: Int] = [:]
+    @State private var checkedIds = Set<Int>()
 
     var body: some View {
         Group {
@@ -38,8 +41,8 @@ struct HistoryView: View {
         .navigationTitle("历史播放")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
-                if !lib.history.isEmpty {
+            if !lib.history.isEmpty {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         lib.clearHistory()
                     } label: {
@@ -47,6 +50,12 @@ struct HistoryView: View {
                     }
                 }
             }
+        }
+        .task {
+            await refreshTotals()
+        }
+        .onReceive(lib.$history) { _ in
+            Task { await refreshTotals(force: false) }
         }
         .fullScreenCover(isPresented: $showPlayer) {
             if let d = playerDetail {
@@ -69,17 +78,44 @@ struct HistoryView: View {
         }
     }
 
+    /// 批量刷新历史剧集的最新总集数（只查尚未检查过、且可能有更新的条目）
+    private func refreshTotals(force: Bool) async {
+        for rec in lib.history {
+            let need = force || (!checkedIds.contains(rec.dramaId) && freshTotals[rec.dramaId] == nil)
+            guard need, rec.seenTotalEpisodes > 0 else { continue }
+            // 已是最新（缓存值与基准一致）不再请求
+            if let cached = freshTotals[rec.dramaId], cached == rec.seenTotalEpisodes { continue }
+            do {
+                let d = try await SiteAPI.shared.detail(id: rec.dramaId)
+                let total = d.totalEpisodes ?? d.episodeCount ?? 0
+                checkedIds.insert(rec.dramaId)
+                if total > 0 {
+                    freshTotals[rec.dramaId] = total
+                }
+            } catch {
+                // 静默：单条失败不影响列表
+            }
+        }
+    }
+
     private func row(_ rec: PlayRecord) -> some View {
         HStack(spacing: 12) {
             NetImage(urlString: rec.cover)
                 .frame(width: 62, height: 86)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(rec.title)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
+                // 更新提示红字（在"看到 第X集"上方）
+                if let current = freshTotals[rec.dramaId],
+                   lib.historyHasUpdate(rec, currentTotal: current) {
+                    Text("已更新至\(current)集")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.red)
+                }
                 Text("看到 第\(rec.epNum)集 \(fmtTime(rec.position)) / \(fmtTime(rec.duration))")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
@@ -129,6 +165,8 @@ struct HistoryView: View {
 
 struct FavoritesView: View {
     @EnvironmentObject private var lib: LibraryStore
+    @State private var freshTotals: [Int: Int] = [:]
+    @State private var checkedIds = Set<Int>()
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
@@ -147,9 +185,7 @@ struct FavoritesView: View {
                             NavigationLink {
                                 DramaDetailView(dramaId: fav.dramaId)
                             } label: {
-                                DramaCard(title: fav.title,
-                                          cover: fav.cover,
-                                          episodeLabel: fav.isFinished ? "全\(fav.totalEpisodes)集" : (fav.totalEpisodes > 0 ? "更新至\(fav.totalEpisodes)集" : ""))
+                                favCard(fav)
                             }
                             .buttonStyle(.plain)
                             .contextMenu {
@@ -172,5 +208,50 @@ struct FavoritesView: View {
         }
         .navigationTitle("我的收藏")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await refreshTotals()
+        }
+    }
+
+    @ViewBuilder
+    private func favCard(_ fav: FavoriteItem) -> some View {
+        let hasNew = hasUpdate(fav)
+        DramaCard(title: fav.title,
+                  cover: fav.cover,
+                  episodeLabel: fav.isFinished ? "全\(fav.totalEpisodes)集" : (fav.totalEpisodes > 0 ? "更新至\(fav.totalEpisodes)集" : ""))
+            .overlay(alignment: .topTrailing) {
+                if hasNew {
+                    Text("NEW")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Color.red)
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+                        .padding(6)
+                }
+            }
+    }
+
+    private func hasUpdate(_ fav: FavoriteItem) -> Bool {
+        guard let current = freshTotals[fav.dramaId] else { return false }
+        return lib.favoriteHasUpdate(fav, currentTotal: current)
+    }
+
+    private func refreshTotals() async {
+        for fav in lib.favorites {
+            guard !checkedIds.contains(fav.dramaId) else { continue }
+            guard !fav.isFinished else { continue }  // 已完结不会有更新
+            do {
+                let d = try await SiteAPI.shared.detail(id: fav.dramaId)
+                let total = d.totalEpisodes ?? d.episodeCount ?? 0
+                checkedIds.insert(fav.dramaId)
+                if total > 0 {
+                    freshTotals[fav.dramaId] = total
+                }
+            } catch {
+                // 静默
+            }
+        }
     }
 }

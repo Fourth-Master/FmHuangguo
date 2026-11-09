@@ -1,37 +1,5 @@
 import SwiftUI
 
-// MARK: - 网络封面图
-
-struct NetImage: View {
-    let urlString: String?
-
-    var body: some View {
-        ZStack {
-            Rectangle().fill(Color(white: 0.92))
-            if let urlString = urlString, let url = URL(string: urlString) {
-                AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
-                    switch phase {
-                    case .success(let img):
-                        img.resizable().scaledToFill()
-                    case .failure:
-                        ZStack {
-                            Color(white: 0.9)
-                            Image(systemName: "photo").foregroundColor(.gray)
-                        }
-                    default:
-                        ZStack {
-                            Color(white: 0.94)
-                            ProgressView()
-                        }
-                    }
-                }
-            } else {
-                Image(systemName: "photo").foregroundColor(.gray)
-            }
-        }
-    }
-}
-
 // MARK: - 错误重试
 
 struct ErrorRetryView: View {

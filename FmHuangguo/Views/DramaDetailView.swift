@@ -59,7 +59,15 @@ struct DramaDetailView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            if model.detail == nil { await model.load() }
+            if model.detail == nil {
+                await model.load()
+            }
+        }
+        .onChange(of: model.detail?.totalEpisodes) { total in
+            // 进入详情即清除更新提示（历史红字与收藏 NEW 双向同步清除）
+            if let d = model.detail, let total = total, total > 0 {
+                lib.clearUpdateBadge(dramaId: d.id, currentTotalEpisodes: total)
+            }
         }
         .fullScreenCover(isPresented: $showPlayer) {
             if let d = model.detail {
@@ -121,6 +129,11 @@ struct DramaDetailView: View {
                 HStack(spacing: 12) {
                     Button {
                         startEp = canResume ? (progress?.epNum ?? 1) : (eps.first?.epNum ?? 1)
+                        if let d = model.detail {
+                            // 播放时刷新历史基准集数（供下次更新检测）
+                            lib.markSeenEpisodeCount(dramaId: d.id,
+                                                     totalEpisodes: d.totalEpisodes ?? d.episodeCount ?? 0)
+                        }
                         showPlayer = true
                     } label: {
                         HStack(spacing: 8) {
@@ -184,10 +197,14 @@ struct DramaDetailView: View {
                     let gridColumns = [GridItem(.adaptive(minimum: 74), spacing: 8)]
                     LazyVGrid(columns: gridColumns, spacing: 8) {
                         ForEach(eps) { ep in
-                            Button {
-                                startEp = ep.epNum
-                                showPlayer = true
-                            } label: {
+                    Button {
+                        startEp = ep.epNum
+                        if let d = model.detail {
+                            lib.markSeenEpisodeCount(dramaId: d.id,
+                                                     totalEpisodes: d.totalEpisodes ?? d.episodeCount ?? 0)
+                        }
+                        showPlayer = true
+                    } label: {
                                 VStack(spacing: 2) {
                                     Text(ep.title)
                                         .font(.system(size: 12, weight: ep.epNum == progress?.epNum ? .semibold : .regular))
