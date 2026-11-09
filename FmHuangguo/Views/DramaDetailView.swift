@@ -217,47 +217,57 @@ struct DramaDetailView: View {
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
-                    let gridColumns = [GridItem(.adaptive(minimum: 74), spacing: 8)]
+                    let gridColumns = [GridItem(.adaptive(minimum: 78), spacing: 8)]
                     LazyVGrid(columns: gridColumns, spacing: 8) {
                         ForEach(eps) { ep in
-                    Button {
-                        if let d = model.detail {
-                            lib.markSeenEpisodeCount(dramaId: d.id,
-                                                     totalEpisodes: d.totalEpisodes ?? d.episodeCount ?? 0)
-                        }
-                        playerEpisode = EpisodeTarget(epNum: ep.epNum)
-                    } label: {
-                                VStack(spacing: 2) {
-                                    Text(ep.title)
-                                        .font(.system(size: 12, weight: ep.epNum == progress?.epNum ? .semibold : .regular))
-                                        .lineLimit(1)
-                                    if ep.duration > 0 {
-                                        Text(fmtTime(Double(ep.duration)))
-                                            .font(.system(size: 10))
-                                            .foregroundColor(.white.opacity(0.75))
-                                    }
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(chipColor(ep, progress: progress))
-                                .foregroundColor(chipForeground(ep, progress: progress))
-                                .cornerRadius(10)
-                            }
+                            episodeChip(ep, progress: progress)
                         }
                     }
                 }
                 }
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
         }
     }
 
-    private func chipColor(_ ep: Episode, progress: PlayRecord?) -> Color {
-        if ep.epNum == progress?.epNum { return Color.accentColor }
-        return Color(white: 0.94)
-    }
-
-    private func chipForeground(_ ep: Episode, progress: PlayRecord?) -> Color {
-        if ep.epNum == progress?.epNum { return .white }
-        return .primary
+    /// 选集 chip：统一「第N集」+ 时长；当前集高亮，已看集右上角小圆点
+    private func episodeChip(_ ep: Episode, progress: PlayRecord?) -> some View {
+        let isCurrent = ep.epNum == progress?.epNum
+        let isWatched = (progress?.epNum ?? 0) > ep.epNum
+        return Button {
+            haptic()
+            if let d = model.detail {
+                lib.markSeenEpisodeCount(dramaId: d.id,
+                                         totalEpisodes: d.totalEpisodes ?? d.episodeCount ?? 0)
+            }
+            playerEpisode = EpisodeTarget(epNum: ep.epNum)
+        } label: {
+            VStack(spacing: 3) {
+                Text("第\(ep.epNum)集")
+                    .font(.system(size: 13, weight: isCurrent ? .bold : .medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text(fmtTime(Double(ep.duration)))
+                    .font(.system(size: 10))
+                    .foregroundColor(isCurrent ? .white.opacity(0.92) : .secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isCurrent ? Color.accentColor : Color(white: 0.94))
+            )
+            .overlay(alignment: .topTrailing) {
+                if isWatched && !isCurrent {
+                    Circle()
+                        .fill(Color.secondary.opacity(0.7))
+                        .frame(width: 5, height: 5)
+                        .padding(5)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

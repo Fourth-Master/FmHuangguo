@@ -5,6 +5,9 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var app: AppState
     @State private var cacheCleared = false
+    @State private var logCleared = false
+    @State private var showLogViewer = false
+    @State private var shareSheetActive = false
 
     var body: some View {
         Form {
@@ -77,6 +80,28 @@ struct SettingsView: View {
                 }
             }
 
+            Section(header: Text("调试")) {
+                Button {
+                    showLogViewer = true
+                } label: {
+                    Label("查看调试日志", systemImage: "doc.text.magnifyingglass")
+                        .font(.system(size: 14))
+                }
+                Button {
+                    shareLog()
+                } label: {
+                    Label("导出日志（分享）", systemImage: "square.and.arrow.up")
+                        .font(.system(size: 14))
+                }
+                Button(role: .destructive) {
+                    DebugLogger.shared.clear()
+                    logCleared = true
+                } label: {
+                    Label("清空调试日志", systemImage: "eraser")
+                        .font(.system(size: 14))
+                }
+            }
+
             Section(header: Text("关于")) {
                 row("应用名称", "Fm黄果")
                 row("版本", Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
@@ -92,6 +117,23 @@ struct SettingsView: View {
         .alert("缓存已清除", isPresented: $cacheCleared) {
             Button("确定", role: .cancel) {}
         }
+        .alert("日志已清空", isPresented: $logCleared) {
+            Button("确定", role: .cancel) {}
+        }
+        .sheet(isPresented: $showLogViewer) {
+            DebugLogViewer()
+        }
+        .sheet(isPresented: $shareSheetActive) {
+            ActivitySheet(items: [DebugLogger.shared.fileForSharing])
+        }
+    }
+
+    private func shareLog() {
+        // 确保日志已落盘
+        DebugLogger.shared.log("---- 导出日志 ----")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            shareSheetActive = true
+        }
     }
 
     private func row(_ title: String, _ value: String) -> some View {
@@ -104,4 +146,63 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
         }
     }
+}
+
+// MARK: - 日志查看器
+
+struct DebugLogViewer: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    @State private var shareSheetActive = false
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                Text(text.isEmpty ? "暂无日志" : text)
+                    .font(.system(size: 11, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .textSelection(.enabled)
+            }
+            .navigationTitle("调试日志")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("关闭") { dismiss() }
+                }
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button {
+                        shareSheetActive = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    Button {
+                        DebugLogger.shared.clear()
+                        text = ""
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                }
+            }
+            .onAppear {
+                text = DebugLogger.shared.readAll()
+            }
+            .sheet(isPresented: $shareSheetActive) {
+                ActivitySheet(items: [DebugLogger.shared.fileForSharing])
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
+// MARK: - 系统分享面板
+
+struct ActivitySheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

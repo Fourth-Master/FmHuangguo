@@ -20,8 +20,10 @@ final class AppState: ObservableObject {
         var candidates = await RouteService.discoverCandidates()
         if candidates.isEmpty { candidates = RouteService.fallbackCandidates() }
         await MainActor.run { routes = candidates }
+        DebugLogger.shared.log("线路候选 \(candidates.count) 条: \(candidates.map { "\($0.name)=\($0.host)" }.joined(separator: " | "))")
 
         let tested = await RouteService.testAll(candidates)
+        DebugLogger.shared.log("测速完成: " + tested.map { "\($0.name)=\($0.ok ? "\($0.latencyMs!)ms" : "fail")" }.joined(separator: " | "))
 
         await MainActor.run {
             routes = tested

@@ -83,26 +83,27 @@ final class PlayerViewModel: ObservableObject {
         duration = Double(ep.duration)
 
         do {
-            var urlStr = ""
-            if ep.videoId.isEmpty {
-                if ep.epNum == 1, let fu = detail.firstPlayUrl, !fu.isEmpty {
-                    urlStr = fu
-                } else {
-                    throw APIError.noPlayURL
-                }
-            } else {
-                let info = try await SiteAPI.shared.play(videoId: ep.videoId)
-                urlStr = info.videoUrl ?? ""
-                if urlStr.isEmpty, ep.epNum == 1, let fu = detail.firstPlayUrl { urlStr = fu }
-                if let d = info.duration, d > 0 { duration = Double(d) }
-            }
-            guard let url = URL(string: urlStr) else { throw APIError.noPlayURL }
-
-            let headers: [String: String] = [
+            let urlStr: String
+            var headers: [String: String] = [
                 "Referer": SiteAPI.shared.base + "/",
                 "User-Agent": RouteService.ua,
             ]
-            // AVURLAssetHTTPHeaderFieldsKey：设置请求头（ Referer / UA 防盗链 ）
+            if ep.videoId.isEmpty && ep.epNum == 1, let fu = detail.firstPlayUrl, !fu.isEmpty {
+                // 兜底：详情自带的直播地址
+                urlStr = fu
+                DebugLogger.shared.log("播放(兜底 detail.video_url) ep=\(ep.epNum)")
+            } else {
+                let pb = try await SiteAPI.shared.playback(videoId: ep.videoId, ep: ep.epNum)
+                urlStr = pb.url
+                // CDN 鉴权头（m3u8/ts/key 都要带）
+                for (k, v) in SiteAPI.shared.cdnHeaders(pb.cdn) {
+                    headers[k] = v
+                }
+                DebugLogger.shared.log("播放 playback ep=\(ep.epNum) videoId=\(ep.videoId) url=\(String(urlStr.prefix(110))) headers=\(SiteAPI.shared.cdnHeaders(pb.cdn).keys.joined(separator: ","))")
+            }
+            guard let url = URL(string: urlStr) else { throw APIError.noPlayURL }
+
+            // AVURLAssetHTTPHeaderFieldsKey：m3u8 及其分片/密钥请求都会带上这些头
             let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
             let item = AVPlayerItem(asset: asset)
 
@@ -114,7 +115,9 @@ final class PlayerViewModel: ObservableObject {
                 self.player.play()
                 self.applySpeed(self.speed)
             }
+            DebugLogger.shared.log("已挂载 AVPlayerItem ep=\(ep.epNum) resume=\(resume ?? 0)")
         } catch {
+            DebugLogger.shared.log("播放失败 ep=\(ep.epNum): \(error.localizedDescription)")
             await MainActor.run { self.error = error.localizedDescription }
         }
     }
@@ -276,9 +279,10 @@ struct PlayerScreen: View {
         case none, brightness, volume, seek
     }
 
-    // 长按倍速
-    @State private var longPressActive = false
+    // 长按倍速（@GestureState 保证任何结束路径都会回滚速度）
+    @GestureState(isActive: false) private var longPressActive: Bool = false
     @State private var speedBeforeLongPress: Float = 1.0
+    @State private var longPressEngaged = false
     /// HUD 进度条数值（0~1，nil 隐藏），用于亮度/音量/快进
     @State private var hudProgress: Double?
 
@@ -308,6 +312,12 @@ struct PlayerScreen: View {
             }
         }
         .onDisappear {
+            // 保险：退出播放器时若倍速还挂着，强制恢复
+            if longPressEngaged {
+                longPressEngaged = false
+                vm.setSpeed(speedBeforeLongPress)
+                hudVisible = false
+            }
             vm.saveProgress()
             UIApplication.shared.isIdleTimerDisabled = false
             AppDelegate.orientationLock = .portrait
@@ -625,30 +635,32 @@ struct PlayerScreen: View {
 
     // MARK: 手势
 
-    /// 长按 2x 倍速播放（松开恢复原速）
+    /// 长按 2x 倍速播放（松开恢复原速）。
+    /// GestureState(isActive:)：无论多快松手，手势结束都会把 longPressActive 复位并触发 onEnd。
     private var longPressGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.6)
-            .sequenced(before: DragGesture(minimumDistance: 0))
+        LongPressGesture(minimumDuration: 0.5)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+            .updating($longPressActive) { value, state, _ in
+                if case .second(true, _) = value {
+                    state = true
+                }
+            }
             .onChanged { value in
-                switch value {
-                case .first(true):
-                    if !longPressActive {
-                        longPressActive = true
+                if case .second(true, _) = value {
+                    if !longPressEngaged {
+                        longPressEngaged = true
                         speedBeforeLongPress = vm.speed
                         vm.setSpeed(2.0)
                         hudText = "2x 倍速播放中"
                         hudProgress = nil
                         hudVisible = true
+                        haptic(.medium)
                     }
-                case .second(true, _):
-                    break
-                default:
-                    break
                 }
             }
             .onEnded { _ in
-                if longPressActive {
-                    longPressActive = false
+                if longPressEngaged {
+                    longPressEngaged = false
                     vm.setSpeed(speedBeforeLongPress)
                     hudVisible = false
                 }
