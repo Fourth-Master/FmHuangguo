@@ -162,8 +162,8 @@ final class CryptoImageLoader {
             return out.withUnsafeMutableBytes { (outPtr: UnsafeMutableRawBufferPointer) -> CCCryptorStatus in
                 let keyPtr = key.withUnsafeBytes { UnsafeRawPointer($0).bindMemory(to: UInt8.self, capacity: key.count) }
                 let ivPtr = ivMutable.withUnsafeMutableBytes { UnsafeRawPointer($0).bindMemory(to: UInt8.self, capacity: 16) }
-                return CCCrypt(encrypt ? kCCEncrypt : kCCDecrypt,
-                               kCCAlgorithmAES, 0, // CBC 模式（无 PKCS7 选项 = NoPadding）
+                return CCCrypt(encrypt ? CCOperation(kCCEncrypt) : CCOperation(kCCDecrypt),
+                               CCAlgorithm(kCCAlgorithmAES), 0, // CBC 模式（无 PKCS7 选项 = NoPadding）
                                keyPtr, key.count,
                                ivPtr,
                                inPtr.baseAddress, input.count,

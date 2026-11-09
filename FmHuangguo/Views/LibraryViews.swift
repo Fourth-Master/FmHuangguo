@@ -55,7 +55,7 @@ struct HistoryView: View {
             await refreshTotals()
         }
         .onReceive(lib.$history) { _ in
-            Task { await refreshTotals(force: false) }
+            Task { await refreshTotals() }
         }
         .fullScreenCover(isPresented: $showPlayer) {
             if let d = playerDetail {
