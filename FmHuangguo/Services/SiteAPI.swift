@@ -137,16 +137,16 @@ final class SiteAPI {
         let data: PlaybackData?
     }
 
-    /// 按剧集取播放地址：POST /api/videos/{videoId}/episodes/{ep}/playback
-    /// - videoId 为剧集详情里的 episode.videoId
-    func playback(videoId: String, ep: Int) async throws -> (url: String, cdn: PlaybackCDN?) {
-        guard !videoId.isEmpty else { throw APIError.noPlayURL }
-        var req = URLRequest(url: URL(string: base + "/api/videos/\(videoId)/episodes/\(ep)/playback")!)
+    /// 按剧集取播放地址：POST /api/videos/{剧id}/episodes/{集数}/playback
+    /// 注意 URL 里是剧的 id（dramaId），不是每集的 videoId；集号用 ep 区分
+    func playback(dramaId: Int, ep: Int) async throws -> (url: String, cdn: PlaybackCDN?) {
+        var req = URLRequest(url: URL(string: base + "/api/videos/\(dramaId)/episodes/\(ep)/playback")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = Data("{}".utf8)
         req.setValue(RouteService.ua, forHTTPHeaderField: "User-Agent")
         req.setValue(base + "/", forHTTPHeaderField: "Referer")
+        let t0 = CFAbsoluteTimeGetCurrent()
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
             throw APIError.badStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)
@@ -154,9 +154,10 @@ final class SiteAPI {
         let decoded = try JSONDecoder().decode(PlaybackResponse.self, from: data)
         guard decoded.status == 1, let d = decoded.data,
               let url = d.streams?.main, !url.isEmpty else {
-            DebugLogger.shared.log("playback 失败 videoId=\(videoId) ep=\(ep) msg=\(decoded.msg ?? "") body=\(String(data: data.prefix(300), encoding: .utf8) ?? "")")
+            DebugLogger.shared.log("playback 失败 dramaId=\(dramaId) ep=\(ep) status=\(decoded.status ?? -1) msg=\(decoded.msg ?? "") body=\(String(data: data.prefix(300), encoding: .utf8) ?? "")")
             throw APIError.noPlayURL
         }
+        DebugLogger.shared.log("playback OK dramaId=\(dramaId) ep=\(ep) \(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))ms url=\(String(url.prefix(110)))")
         return (url, d.cdn)
     }
 

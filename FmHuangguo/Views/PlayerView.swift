@@ -93,7 +93,7 @@ final class PlayerViewModel: ObservableObject {
                 urlStr = fu
                 DebugLogger.shared.log("播放(兜底 detail.video_url) ep=\(ep.epNum)")
             } else {
-                let pb = try await SiteAPI.shared.playback(videoId: ep.videoId, ep: ep.epNum)
+                let pb = try await SiteAPI.shared.playback(dramaId: detail.id, ep: ep.epNum)
                 urlStr = pb.url
                 // CDN 鉴权头（m3u8/ts/key 都要带）
                 for (k, v) in SiteAPI.shared.cdnHeaders(pb.cdn) {
