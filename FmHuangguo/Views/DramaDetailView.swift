@@ -89,7 +89,7 @@ struct DramaDetailView: View {
                         .frame(height: 210)
                         .frame(maxWidth: .infinity)
                         .clipped()
-                        .overlay(MaterialBlur())
+                        .overlay(VisualEffectBlur(style: .systemUltraThinMaterialDark))
                         .overlay(LinearGradient(colors: [.black.opacity(0.30), .black.opacity(0.62)],
                                                 startPoint: .top, endPoint: .bottom))
                     HStack(alignment: .bottom, spacing: 12) {
@@ -246,14 +246,6 @@ struct DramaDetailView: View {
             }
         }
     }
-
-    /// iOS 15 兼容的系统材质模糊层
-    struct MaterialBlur: View {
-        var body: some View {
-            VisualEffectBlur()
-        }
-    }
-}
 
     private func chipColor(_ ep: Episode, progress: PlayRecord?) -> Color {
         if ep.epNum == progress?.epNum { return Color.accentColor }
