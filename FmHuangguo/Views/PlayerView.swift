@@ -353,6 +353,7 @@ struct PlayerScreen: View {
                 errorOverlay(err)
             }
 
+            // HUD：顶部居中（长按倍速/亮度/音量/快进提示）
             if hudVisible {
                 VStack(spacing: 8) {
                     Text(hudText)
@@ -372,6 +373,9 @@ struct PlayerScreen: View {
                 }
                 .padding(.horizontal, 18).padding(.vertical, 12)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.black.opacity(0.72)))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 56) // 避开顶部返回栏
+                .allowsHitTesting(false)
             }
 
             controlsOverlay(landscape: landscape)
@@ -437,18 +441,18 @@ struct PlayerScreen: View {
 
             Spacer()
 
-            // 中央控制按钮
-            HStack(spacing: 46) {
+            // 控制按钮组：紧贴进度条上方（原居中，移至底部）
+            HStack(spacing: 38) {
                 Button {
                     haptic()
                     Task { await vm.playPrev() }
                 } label: {
                     Image(systemName: "backward.end.fill")
-                        .font(.system(size: 20))
+                        .font(.system(size: 17))
                         .foregroundColor(.white)
-                        .frame(width: 56, height: 56)
-                        .background(Circle().fill(Color.white.opacity(vm.prevEpisode != nil ? 0.16 : 0.06)))
-                        .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
+                        .frame(width: 46, height: 46)
+                        .background(Circle().fill(Color.white.opacity(vm.prevEpisode != nil ? 0.14 : 0.05)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
                 }
                 .disabled(vm.prevEpisode == nil)
 
@@ -458,11 +462,11 @@ struct PlayerScreen: View {
                     flashControls()
                 } label: {
                     Image(systemName: vm.playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 30))
-                        .foregroundColor(.black)
-                        .frame(width: 74, height: 74)
-                        .background(Circle().fill(Color.white.opacity(0.92)))
-                        .shadow(color: .black.opacity(0.3), radius: 10, y: 3)
+                        .font(.system(size: 24))
+                        .foregroundColor(.white.opacity(0.85))
+                        .frame(width: 58, height: 58)
+                        .background(Circle().fill(Color.white.opacity(0.14)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.30), lineWidth: 1))
                 }
 
                 Button {
@@ -470,17 +474,16 @@ struct PlayerScreen: View {
                     Task { await vm.playNext() }
                 } label: {
                     Image(systemName: "forward.end.fill")
-                        .font(.system(size: 20))
+                        .font(.system(size: 17))
                         .foregroundColor(.white)
-                        .frame(width: 56, height: 56)
-                        .background(Circle().fill(Color.white.opacity(vm.nextEpisode != nil ? 0.16 : 0.06)))
-                        .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
+                        .frame(width: 46, height: 46)
+                        .background(Circle().fill(Color.white.opacity(vm.nextEpisode != nil ? 0.14 : 0.05)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
                 }
                 .disabled(vm.nextEpisode == nil)
             }
             .opacity(showControls && vm.error == nil ? 1 : 0)
-
-            Spacer()
+            .padding(.bottom, 6)
 
             // 底部
             HStack(spacing: 10) {

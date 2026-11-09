@@ -224,7 +224,7 @@ struct HomeView: View {
             .frame(maxWidth: .infinity)
         } else if let err = model.error, model.items.isEmpty {
             ErrorRetryView(message: err, extraActionTitle: "换线路") {
-                Task { await app.startRouting() }
+                Task { await app.startRouting(force: true) }
             } onRetry: {
                 Task { await model.reload() }
             }

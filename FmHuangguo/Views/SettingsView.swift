@@ -62,7 +62,7 @@ struct SettingsView: View {
                     }
                 }
                 Button {
-                    Task { await app.startRouting() }
+                    Task { await app.startRouting(force: true) }
                 } label: {
                     Label("重新测速并自动选择最快线路", systemImage: "speedometer")
                         .font(.system(size: 14, weight: .medium))
