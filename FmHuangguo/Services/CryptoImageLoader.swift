@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import CryptoKit
 import SwiftUI
+import CommonCrypto
 
 // MARK: - 加密图片加载器
 //
@@ -128,22 +129,24 @@ final class CryptoImageLoader {
     static func aesDecrypt(_ cipher: Data) -> Data? {
         let keyData = Data(decryptKey.utf8)
         let ivData = Data(decryptIV.utf8)
-        guard keyData.count == kCCKeySizeAES128, ivData.count == kCCBlockSizeAES128 else { return nil }
+        let blockSize = kCCBlockSizeAES128
+        let keySize = kCCKeySizeAES128
+        guard keyData.count == keySize, ivData.count == blockSize else { return nil }
         guard !cipher.isEmpty else { return nil }
 
         let len = cipher.count
         let alignedLen = (len + 15) & ~15
 
         // 输入补零到块对齐 + 追加一块由密文末块派生的合法 PKCS#7 填充块
-        var buffer = Data(count: alignedLen + kCCBlockSizeAES128)
+        var buffer = Data(count: alignedLen + blockSize)
         buffer.replaceSubrange(0..<len, with: cipher)
-        let lastBlockStart = alignedLen - kCCBlockSizeAES128
-        let lastBlock = buffer.subdata(in: lastBlock..<alignedLen)
+        let lastBlockStart = alignedLen - blockSize
+        let lastBlockData = buffer.subdata(in: lastBlockStart..<alignedLen)
 
         // padBlock = E(PKCS7_BLOCK ^ C[n])，即以 C[n] 为 IV 加密 PKCS7 常数块的首块输出
         let pkcs7 = Data(repeating: 0x10, count: 16)
-        let xored = Data(zip(pkcs7, lastBlock).map { $0 ^ $1 })
-        guard let padBlock = Self.rawCBC(input: xored, key: keyData, iv: lastBlock, encrypt: true),
+        let xored = Data(zip(pkcs7, lastBlockData).map { $0 ^ $1 })
+        guard let padBlock = Self.rawCBC(input: xored, key: keyData, iv: lastBlockData, encrypt: true),
               padBlock.count >= 16 else { return nil }
         buffer.replaceSubrange(alignedLen..<(alignedLen + 16), with: padBlock.prefix(16))
 
