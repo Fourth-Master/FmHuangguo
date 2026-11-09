@@ -22,6 +22,21 @@ final class DebugLogger {
         df.dateFormat = "MM-dd HH:mm:ss.SSS"
         dateFormatter = df
         _ = fileURL // 确保路径就绪
+        rolloverIfNeeded()
+    }
+
+    /// 版本变化时自动清空旧日志（比较 CFBundleVersion 构建号，存 UserDefaults）
+    private func rolloverIfNeeded() {
+        let current = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+        let last = UserDefaults.standard.string(forKey: "debug_log_build_version")
+        guard last != current else { return }
+        UserDefaults.standard.set(current, forKey: "debug_log_build_version")
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            let header = "[--] App 更新到 v\(version) (build \(current))，日志已清空 --\n"
+            try? header.write(to: self.fileURL, atomically: true, encoding: .utf8)
+        }
     }
 
     func log(_ message: String, file: String = #file, line: Int = #line) {

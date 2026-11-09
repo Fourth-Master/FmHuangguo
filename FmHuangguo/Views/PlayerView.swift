@@ -239,7 +239,6 @@ struct PlayerLayerView: UIViewRepresentable {
         let layer = AVPlayerLayer()
         layer.player = player
         layer.videoGravity = fillMode ? AVLayerVideoGravity.resizeAspectFill : AVLayerVideoGravity.resizeAspect
-        layer.frame = UIScreen.main.bounds
         v.layer.addSublayer(layer)
         v.backgroundColor = .black
         return v
@@ -247,6 +246,8 @@ struct PlayerLayerView: UIViewRepresentable {
 
     func updateUIView(_ uiView: PlayerContainerView, context: Context) {
         uiView.playerLayer?.videoGravity = fillMode ? AVLayerVideoGravity.resizeAspectFill : AVLayerVideoGravity.resizeAspect
+        // 尺寸变化（旋转/布局）时立即同步 layer frame
+        uiView.setNeedsLayout()
     }
 }
 
@@ -261,7 +262,8 @@ struct PlayerScreen: View {
     @StateObject private var vm: PlayerViewModel
 
     @State private var showControls = true
-    @State private var fillMode = true
+    /// 默认按比例完整显示（fit）；双击切换填充/完整
+    @State private var fillMode = false
     @State private var showEpisodeSheet = false
     @State private var hideTask: Task<Void, Never>?
 
@@ -378,19 +380,24 @@ struct PlayerScreen: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: 手势层（位于控制层之下；控制按钮与进度条在上层优先拿触摸）
-
+    // MARK: 手势层（铺满播放区，但用高优先级让位控制层：控制按钮/进度条先拿触摸）
+    //
+    // 之前 onTapGesture 直接挂在整个 ZStack 上会抢走顶部返回按钮/底部按钮的点击，
+    // 改为 simultaneousGesture + .highPriorityGesture 组合：
+    //   - 控制层 Button 命中时系统直接交给 Button（Button 在上层）
+    //   - 其余区域走单击/双击/长按/拖动手势
     private func gestureLayer(width: CGFloat) -> some View {
         Color.clear
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) {
-                fillMode.toggle()
-            }
-            .onTapGesture(count: 1) {
-                flashControls()
-            }
-            .simultaneousGesture(longPressGesture)
-            .simultaneousGesture(dragGesture(width: width))
+            .gesture(
+                SimultaneousGesture(
+                    TapGesture(count: 2).onEnded { fillMode.toggle() },
+                    SimultaneousGesture(
+                        TapGesture().onEnded { flashControls() },
+                        SimultaneousGesture(longPressGesture, dragGesture(width: width))
+                    )
+                )
+            )
     }
 
     // MARK: 控制层
@@ -420,6 +427,7 @@ struct PlayerScreen: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 46)
+            .contentShape(Rectangle())
             .background(
                 LinearGradient(colors: [Color.black.opacity(0.55), Color.black.opacity(0)],
                                startPoint: .top, endPoint: .bottom)
