@@ -86,7 +86,8 @@ struct HistoryView: View {
         }
     }
 
-    /// 批量刷新历史剧集的最新总集数（只查尚未检查过、且可能有更新的条目）    private func refreshTotals(force: Bool) async {
+    /// 批量刷新历史剧集的最新总集数（只查尚未检查过、且可能有更新的条目）
+    private func refreshTotals() async {
         for rec in lib.history {
             let need = force || (!checkedIds.contains(rec.dramaId) && freshTotals[rec.dramaId] == nil)
             guard need, rec.seenTotalEpisodes > 0 else { continue }
