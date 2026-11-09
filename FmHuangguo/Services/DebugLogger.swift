@@ -50,7 +50,7 @@ final class DebugLogger {
             _ = try? handle.seekToEnd()
             try? handle.write(contentsOf: Data(entry.utf8))
         } else {
-            try? Data(entry.utf8).write(to: fileURL, options: .atomic)
+            try? entry.write(to: fileURL, atomically: true, encoding: .utf8)
         }
     }
 
@@ -62,7 +62,7 @@ final class DebugLogger {
     func clear() {
         queue.async { [weak self] in
             guard let self = self else { return }
-            try? "".write(to: self.fileURL, options: .atomic)
+            try? "".write(to: self.fileURL, atomically: true, encoding: .utf8)
         }
     }
 

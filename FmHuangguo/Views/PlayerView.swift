@@ -280,7 +280,7 @@ struct PlayerScreen: View {
     }
 
     // 长按倍速（@GestureState 保证任何结束路径都会回滚速度）
-    @GestureState(isActive: false) private var longPressActive: Bool = false
+    @GestureState private var longPressActive: Bool = false
     @State private var speedBeforeLongPress: Float = 1.0
     @State private var longPressEngaged = false
     /// HUD 进度条数值（0~1，nil 隐藏），用于亮度/音量/快进
