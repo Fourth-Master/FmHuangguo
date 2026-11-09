@@ -31,9 +31,14 @@ struct DramaDetailView: View {
     let dramaId: Int
     @StateObject private var model: DetailModel
     @EnvironmentObject private var lib: LibraryStore
-    @State private var showPlayer = false
-    @State private var startEp = 1
+    @State private var playerEpisode: EpisodeTarget?
     @State private var descExpanded = false
+
+    /// 当前要播放的目标集（nil = 关闭播放器）。item 驱动避免 iOS 15 fullScreenCover 内容取到旧状态。
+    struct EpisodeTarget: Identifiable {
+        let epNum: Int
+        var id: Int { epNum }
+    }
 
     init(dramaId: Int) {
         self.dramaId = dramaId
@@ -69,9 +74,9 @@ struct DramaDetailView: View {
                 lib.clearUpdateBadge(dramaId: d.id, currentTotalEpisodes: total)
             }
         }
-        .fullScreenCover(isPresented: $showPlayer) {
+        .fullScreenCover(item: $playerEpisode) { target in
             if let d = model.detail {
-                PlayerScreen(detail: d, startEp: startEp)
+                PlayerScreen(detail: d, startEp: target.epNum)
             }
         }
     }
@@ -144,13 +149,13 @@ struct DramaDetailView: View {
                 HStack(spacing: 12) {
                     Button {
                         haptic(.medium)
-                        startEp = canResume ? (progress?.epNum ?? 1) : (eps.first?.epNum ?? 1)
+                        let target = canResume ? (progress?.epNum ?? 1) : (eps.first?.epNum ?? 1)
                         if let d = model.detail {
                             // 播放时刷新历史基准集数（供下次更新检测）
                             lib.markSeenEpisodeCount(dramaId: d.id,
                                                      totalEpisodes: d.totalEpisodes ?? d.episodeCount ?? 0)
                         }
-                        showPlayer = true
+                        playerEpisode = EpisodeTarget(epNum: target)
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "play.fill")
@@ -216,12 +221,11 @@ struct DramaDetailView: View {
                     LazyVGrid(columns: gridColumns, spacing: 8) {
                         ForEach(eps) { ep in
                     Button {
-                        startEp = ep.epNum
                         if let d = model.detail {
                             lib.markSeenEpisodeCount(dramaId: d.id,
                                                      totalEpisodes: d.totalEpisodes ?? d.episodeCount ?? 0)
                         }
-                        showPlayer = true
+                        playerEpisode = EpisodeTarget(epNum: ep.epNum)
                     } label: {
                                 VStack(spacing: 2) {
                                     Text(ep.title)

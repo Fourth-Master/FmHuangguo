@@ -79,7 +79,7 @@ struct SettingsView: View {
 
             Section(header: Text("关于")) {
                 row("应用名称", "Fm黄果")
-                row("版本", "1.0.0")
+                row("版本", Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
                 row("适用系统", "iOS 15.4+")
             }
 

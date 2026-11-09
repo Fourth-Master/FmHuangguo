@@ -5,9 +5,8 @@ import SwiftUI
 struct HistoryView: View {
     @EnvironmentObject private var lib: LibraryStore
     @State private var openingId: Int?
-    @State private var playerDetail: DramaDetail?
-    @State private var startEp = 1
-    @State private var showPlayer = false
+    /// 待播放目标（detail + 集数），item 驱动 fullScreenCover
+    @State private var playerTarget: PlayerTarget?
     @State private var openError: String?
     @State private var showOpenError = false
     /// 当前各剧集最新总集数（dramaId -> total），用于"已更新至X集"红字
@@ -41,10 +40,8 @@ struct HistoryView: View {
         .onReceive(lib.$history) { _ in
             Task { await refreshTotals() }
         }
-        .fullScreenCover(isPresented: $showPlayer) {
-            if let d = playerDetail {
-                PlayerScreen(detail: d, startEp: startEp)
-            }
+        .fullScreenCover(item: $playerTarget) { target in
+            PlayerScreen(detail: target.detail, startEp: target.epNum)
         }
         .alert("打开失败", isPresented: $showOpenError) {
             Button("确定", role: .cancel) {}
@@ -155,10 +152,8 @@ struct HistoryView: View {
         Task {
             do {
                 let d = try await SiteAPI.shared.detail(id: rec.dramaId)
-                playerDetail = d
-                startEp = rec.epNum
                 openingId = nil
-                showPlayer = true
+                playerTarget = PlayerTarget(detail: d, epNum: rec.epNum)
             } catch {
                 openingId = nil
                 openError = error.localizedDescription
@@ -166,6 +161,13 @@ struct HistoryView: View {
             }
         }
     }
+}
+
+/// 历史页播放器入口载体
+private struct PlayerTarget: Identifiable {
+    let detail: DramaDetail
+    let epNum: Int
+    var id: Int { detail.id * 10000 + epNum }
 }
 
 // MARK: - 我的收藏

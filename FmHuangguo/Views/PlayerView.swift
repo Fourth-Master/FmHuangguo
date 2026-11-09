@@ -290,13 +290,8 @@ struct PlayerScreen: View {
 
     var body: some View {
         GeometryReader { geo in
-            let landscape = geo.size.width > geo.size.height
-            VStack(spacing: 0) {
-                playerArea(width: geo.size.width, height: geo.size.height, landscape: landscape)
-                if !landscape {
-                    episodePanel
-                }
-            }
+            playerArea(width: geo.size.width, height: geo.size.height,
+                       landscape: geo.size.width > geo.size.height)
         }
         .background(Color.black.ignoresSafeArea())
         .statusBar(hidden: true)
@@ -334,6 +329,10 @@ struct PlayerScreen: View {
             PlayerLayerView(player: vm.player, fillMode: fillMode)
                 .allowsHitTesting(false)
 
+            // 手势层：在控制层之下，控制按钮/进度条优先接收触摸，
+            // 空白区域落到这一层处理 拖动快进/亮度/音量/长按倍速/单击/双击
+            gestureLayer(width: width)
+
             if vm.buffering && vm.error == nil {
                 ProgressView().tint(.white).scaleEffect(1.4)
             }
@@ -367,15 +366,21 @@ struct PlayerScreen: View {
         }
         .frame(height: landscape ? nil : height)
         .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            fillMode.toggle()
-        }
-        .onTapGesture(count: 1) {
-            flashControls()
-        }
-        .simultaneousGesture(longPressGesture)
-        .simultaneousGesture(dragGesture(width: width))
+    }
+
+    // MARK: 手势层（位于控制层之下；控制按钮与进度条在上层优先拿触摸）
+
+    private func gestureLayer(width: CGFloat) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                fillMode.toggle()
+            }
+            .onTapGesture(count: 1) {
+                flashControls()
+            }
+            .simultaneousGesture(longPressGesture)
+            .simultaneousGesture(dragGesture(width: width))
     }
 
     // MARK: 控制层
@@ -583,63 +588,7 @@ struct PlayerScreen: View {
         .cornerRadius(16)
     }
 
-    // MARK: 竖屏下方选集面板
-
-    private var episodePanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("选集")
-                    .font(.system(size: 15, weight: .semibold))
-                Text("\(vm.episode.title)")
-                    .font(.system(size: 12))
-                    .foregroundColor(.accentColor)
-                Spacer()
-                Text("共\(detail.episodeList.count)集")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 8) {
-                        ForEach(detail.episodeList) { ep in
-                            Button {
-                                Task { await vm.load(ep: ep) }
-                                flashControls()
-                            } label: {
-                                Text("第\(ep.epNum)集")
-                                    .font(.system(size: 13, weight: ep.epNum == vm.episode.epNum ? .semibold : .regular))
-                                    .padding(.horizontal, 14).padding(.vertical, 7)
-                                    .background(ep.epNum == vm.episode.epNum ? Color.accentColor : Color(white: 0.93))
-                                    .foregroundColor(ep.epNum == vm.episode.epNum ? .white : .primary)
-                                    .cornerRadius(16)
-                            }
-                            .id(ep.epNum)
-                        }
-                    }
-                    .padding(.horizontal, 14)
-                }
-                .onChange(of: vm.episode.epNum) { n in
-                    withAnimation { proxy.scrollTo(n, anchor: .center) }
-                }
-            }
-
-            if let desc = detail.description, !desc.isEmpty {
-                Text(desc)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-                    .padding(.horizontal, 14)
-            }
-            Spacer(minLength: 8)
-        }
-        .frame(maxWidth: .infinity)
-        .background(Color(uiColor: .systemBackground).ignoresSafeArea(edges: .bottom))
-    }
-
-    // MARK: 选集 Sheet（横屏用）
+    // MARK: 选集 Sheet（底部"选集"按钮唤出）
 
     private var episodeSheet: some View {
         NavigationView {
