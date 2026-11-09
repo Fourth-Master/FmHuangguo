@@ -118,8 +118,9 @@ final class CryptoImageLoader {
         func ascii(_ from: Int, _ to: Int) -> String {
             String(bytes: b[from..<to], encoding: .ascii) ?? ""
         }
+        let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
         if ascii(0, 4) == "RIFF" && ascii(8, 12) == "WEBP" { return "image/webp" }
-        if b[0] == 0x89 && ascii(1, 8) == "PNG\r\n\x1a\n" { return "image/png" }
+        if b[0] == 0x89 && Array(b[1..<9]) == pngSignature { return "image/png" }
         if ascii(0, 6) == "GIF87a" || ascii(0, 6) == "GIF89a" { return "image/gif" }
         return nil
     }

@@ -19,23 +19,7 @@ struct HistoryView: View {
             if lib.history.isEmpty {
                 EmptyStateView(icon: "clock.arrow.circlepath", text: "还没有播放记录\n去首页挑一部剧开始看吧")
             } else {
-                List {
-                    ForEach(lib.history) { rec in
-                        Button {
-                            open(rec)
-                        } label: {
-                            row(rec)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                lib.removeHistory(dramaId: rec.dramaId)
-                            } label: {
-                                Label("删除", systemImage: "trash")
-                            }
-                        }
-                    }
-                }
-                .listStyle(.plain)
+                historyList
             }
         }
         .navigationTitle("历史播放")
@@ -78,8 +62,31 @@ struct HistoryView: View {
         }
     }
 
-    /// 批量刷新历史剧集的最新总集数（只查尚未检查过、且可能有更新的条目）
-    private func refreshTotals(force: Bool) async {
+    private var historyList: some View {
+        List {
+            ForEach(lib.history) { rec in
+                historyRowButton(rec)
+            }
+        }
+        .listStyle(.plain)
+    }
+
+    private func historyRowButton(_ rec: PlayRecord) -> some View {
+        Button {
+            open(rec)
+        } label: {
+            row(rec)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                lib.removeHistory(dramaId: rec.dramaId)
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+        }
+    }
+
+    /// 批量刷新历史剧集的最新总集数（只查尚未检查过、且可能有更新的条目）    private func refreshTotals(force: Bool) async {
         for rec in lib.history {
             let need = force || (!checkedIds.contains(rec.dramaId) && freshTotals[rec.dramaId] == nil)
             guard need, rec.seenTotalEpisodes > 0 else { continue }
