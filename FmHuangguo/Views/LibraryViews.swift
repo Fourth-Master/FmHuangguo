@@ -25,8 +25,8 @@ struct HistoryView: View {
         .navigationTitle("历史播放")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if !lib.history.isEmpty {
-                ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if !lib.history.isEmpty {
                     Button {
                         lib.clearHistory()
                     } label: {
@@ -89,8 +89,7 @@ struct HistoryView: View {
     /// 批量刷新历史剧集的最新总集数（只查尚未检查过、且可能有更新的条目）
     private func refreshTotals() async {
         for rec in lib.history {
-            let need = force || (!checkedIds.contains(rec.dramaId) && freshTotals[rec.dramaId] == nil)
-            guard need, rec.seenTotalEpisodes > 0 else { continue }
+            guard !checkedIds.contains(rec.dramaId), rec.seenTotalEpisodes > 0 else { continue }
             // 已是最新（缓存值与基准一致）不再请求
             if let cached = freshTotals[rec.dramaId], cached == rec.seenTotalEpisodes { continue }
             do {
