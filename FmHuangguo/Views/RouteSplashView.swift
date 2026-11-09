@@ -5,6 +5,8 @@ import SwiftUI
 struct RouteSplashView: View {
     @EnvironmentObject private var app: AppState
     @State private var autoStarted = false
+    @State private var logoScale: CGFloat = 0.9
+    @State private var contentOpacity: Double = 0
 
     var body: some View {
         ZStack {
@@ -16,18 +18,24 @@ struct RouteSplashView: View {
             VStack(spacing: 22) {
                 Spacer()
 
-                // App 图标块
+                // App 图标块（呼吸动效）
                 ZStack {
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(LinearGradient(colors: [Color(red: 0.98, green: 0.27, blue: 0.57),
                                                       Color(red: 0.85, green: 0.15, blue: 0.45)],
                                              startPoint: .top, endPoint: .bottom))
                         .frame(width: 86, height: 86)
+                        .shadow(color: Color(red: 0.98, green: 0.27, blue: 0.57).opacity(0.55), radius: 18, y: 6)
                     Text("FM")
                         .font(.system(size: 34, weight: .heavy))
                         .foregroundColor(.white)
                 }
-                .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+                .scaleEffect(logoScale)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+                        logoScale = 1.04
+                    }
+                }
 
                 Text("Fm黄果")
                     .font(.system(size: 30, weight: .bold))
@@ -43,6 +51,12 @@ struct RouteSplashView: View {
                 Spacer()
             }
             .padding(28)
+            .opacity(contentOpacity)
+        }
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.45)) {
+                contentOpacity = 1
+            }
         }
         .task {
             // 仅冷启动时自动测速；从设置页"重新测速"进入时 phase 已是 routing
@@ -99,12 +113,13 @@ struct RouteSplashView: View {
     }
 
     private func routeRow(_ r: RouteCandidate) -> some View {
-        HStack(spacing: 10) {
+        let isBest = app.routes.first(where: { $0.ok })?.url == r.url
+        return HStack(spacing: 10) {
             Circle()
                 .fill(r.tested ? (r.ok ? Color.green : Color.red.opacity(0.8)) : Color.white.opacity(0.35))
                 .frame(width: 8, height: 8)
             Text(r.name)
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 14, weight: isBest ? .bold : .medium))
                 .foregroundColor(.white)
                 .frame(width: 110, alignment: .leading)
             Text(r.host)
@@ -116,7 +131,7 @@ struct RouteSplashView: View {
                 if r.ok {
                     Text("\(r.latencyMs ?? 0)ms")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color(red: 0.55, green: 0.95, blue: 0.6))
+                        .foregroundColor(isBest ? Color(red: 1.0, green: 0.85, blue: 0.35) : Color(red: 0.55, green: 0.95, blue: 0.6))
                 } else {
                     Text("不可用")
                         .font(.system(size: 12))
@@ -128,7 +143,14 @@ struct RouteSplashView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Color.white.opacity(0.10))
-        .cornerRadius(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(isBest ? 0.18 : 0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isBest ? Color(red: 1.0, green: 0.85, blue: 0.35).opacity(0.8) : Color.white.opacity(0.08),
+                        lineWidth: isBest ? 1.5 : 1)
+        )
     }
 }

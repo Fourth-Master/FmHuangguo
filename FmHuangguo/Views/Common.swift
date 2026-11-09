@@ -1,4 +1,17 @@
 import SwiftUI
+import UIKit
+
+// MARK: - iOS 15 兼容的系统材质模糊
+
+struct VisualEffectBlur: UIViewRepresentable {
+    var style: UIBlurEffect.Style = .systemUltraThinMaterialDark
+
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        UIVisualEffectView(effect: UIBlurEffect(style: style))
+    }
+
+    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {}
+}
 
 // MARK: - 错误重试
 

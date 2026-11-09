@@ -206,31 +206,75 @@ private extension UIImage {
     }
 }
 
-// MARK: - SwiftUI 图片视图（替代 AsyncImage）
+// MARK: - SwiftUI 图片视图（替代 AsyncImage，带骨架屏动效）
 
 struct NetImage: View {
     let urlString: String?
     @State private var image: UIImage?
+    @State private var failed = false
 
     var body: some View {
         ZStack {
-            Rectangle().fill(Color(white: 0.92))
+            Rectangle().fill(Color(white: 0.93))
             if let image = image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
                     .transition(.opacity)
-            } else {
+            } else if failed {
                 Image(systemName: "photo")
-                    .foregroundColor(Color(white: 0.75))
+                    .foregroundColor(Color(white: 0.78))
+            } else {
+                Color.clear.shimmer()
             }
         }
         .task(id: urlString) {
             if let img = await CryptoImageLoader.shared.load(urlString) {
-                withAnimation(.easeOut(duration: 0.15)) {
+                withAnimation(.easeOut(duration: 0.18)) {
                     image = img
                 }
+            } else {
+                failed = true
             }
         }
     }
+}
+
+// MARK: - 骨架屏微光动效
+
+struct Shimmer: ViewModifier {
+    @State private var phase: CGFloat = -1
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                GeometryReader { geo in
+                    LinearGradient(colors: [.clear,
+                                            Color.white.opacity(0.5),
+                                            .clear],
+                                   startPoint: .leading, endPoint: .trailing)
+                        .frame(width: geo.size.width * 0.55)
+                        .offset(x: phase * geo.size.width * 1.5)
+                }
+                .allowsHitTesting(false)
+            )
+            .clipped()
+            .onAppear {
+                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                    phase = 1
+                }
+            }
+    }
+}
+
+extension View {
+    func shimmer() -> some View {
+        modifier(Shimmer())
+    }
+}
+
+// MARK: - 触感反馈
+
+func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .light) {
+    UIImpactFeedbackGenerator(style: style).impactOccurred()
 }

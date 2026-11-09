@@ -279,6 +279,8 @@ struct PlayerScreen: View {
     // 长按倍速
     @State private var longPressActive = false
     @State private var speedBeforeLongPress: Float = 1.0
+    /// HUD 进度条数值（0~1，nil 隐藏），用于亮度/音量/快进
+    @State private var hudProgress: Double?
 
     init(detail: DramaDetail, startEp: Int) {
         self.detail = detail
@@ -341,12 +343,24 @@ struct PlayerScreen: View {
             }
 
             if hudVisible {
-                Text(hudText)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(Color.black.opacity(0.7))
-                    .cornerRadius(10)
+                VStack(spacing: 8) {
+                    Text(hudText)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                    if hudProgress != nil {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.white.opacity(0.25))
+                                Capsule()
+                                    .fill(Color.white)
+                                    .frame(width: geo.size.width * (hudProgress ?? 0))
+                            }
+                        }
+                        .frame(width: 120, height: 4)
+                    }
+                }
+                .padding(.horizontal, 18).padding(.vertical, 12)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.black.opacity(0.72)))
             }
 
             controlsOverlay(landscape: landscape)
@@ -403,29 +417,41 @@ struct PlayerScreen: View {
             // 中央控制按钮
             HStack(spacing: 46) {
                 Button {
+                    haptic()
                     Task { await vm.playPrev() }
                 } label: {
                     Image(systemName: "backward.end.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(vm.prevEpisode != nil ? .white : .white.opacity(0.3))
+                        .font(.system(size: 20))
+                        .foregroundColor(.white)
+                        .frame(width: 56, height: 56)
+                        .background(Circle().fill(Color.white.opacity(vm.prevEpisode != nil ? 0.16 : 0.06)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
                 }
                 .disabled(vm.prevEpisode == nil)
 
                 Button {
+                    haptic(.medium)
                     vm.togglePlay()
                     flashControls()
                 } label: {
                     Image(systemName: vm.playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 40))
-                        .foregroundColor(.white)
+                        .font(.system(size: 30))
+                        .foregroundColor(.black)
+                        .frame(width: 74, height: 74)
+                        .background(Circle().fill(Color.white.opacity(0.92)))
+                        .shadow(color: .black.opacity(0.3), radius: 10, y: 3)
                 }
 
                 Button {
+                    haptic()
                     Task { await vm.playNext() }
                 } label: {
                     Image(systemName: "forward.end.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(vm.nextEpisode != nil ? .white : .white.opacity(0.3))
+                        .font(.system(size: 20))
+                        .foregroundColor(.white)
+                        .frame(width: 56, height: 56)
+                        .background(Circle().fill(Color.white.opacity(vm.nextEpisode != nil ? 0.16 : 0.06)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
                 }
                 .disabled(vm.nextEpisode == nil)
             }
@@ -662,6 +688,7 @@ struct PlayerScreen: View {
                         speedBeforeLongPress = vm.speed
                         vm.setSpeed(2.0)
                         hudText = "2x 倍速播放中"
+                        hudProgress = nil
                         hudVisible = true
                     }
                 case .second(true, _):
@@ -703,15 +730,18 @@ struct PlayerScreen: View {
                     let b = min(1, max(0.01, dragStartBrightness + delta))
                     UIScreen.main.brightness = b
                     hudText = "亮度 \(Int(b * 100))%"
+                    hudProgress = b
                 case .volume:
                     let delta = Float(-v.translation.height) / 320
                     let vol = min(1, max(0, dragStartVolume + delta))
                     vm.player.volume = vol
                     hudText = "音量 \(Int(vol * 100))%"
+                    hudProgress = Double(vol)
                 case .seek:
                     let delta = Double(v.translation.width) / Double(max(width, 1)) * 120
                     let target = max(0, min(vm.duration, dragStartTime + delta))
                     hudText = "\(fmtTime(target)) / \(fmtTime(vm.duration))"
+                    hudProgress = vm.duration > 0 ? target / vm.duration : nil
                     scrubValue = target
                     scrubbing = true
                 case .none:
@@ -728,6 +758,7 @@ struct PlayerScreen: View {
                 }
                 dragMode = .none
                 hudVisible = false
+                hudProgress = nil
                 // 手势结束后立刻退出 scrub 状态，恢复跟随播放器实时时间
                 scrubbing = false
             }

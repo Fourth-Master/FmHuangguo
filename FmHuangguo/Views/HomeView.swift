@@ -10,39 +10,53 @@ struct DramaCard: View {
     var tagText: String = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
             NetImage(urlString: cover)
                 .frame(maxWidth: .infinity)
                 .aspectRatio(0.72, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(alignment: .bottom) {
+                    // 底部渐变遮罩，衬托角标
+                    LinearGradient(colors: [.clear, .black.opacity(0.55)],
+                                   startPoint: .center, endPoint: .bottom)
+                        .allowsHitTesting(false)
+                }
                 .overlay(alignment: .bottomLeading) {
                     if !episodeLabel.isEmpty {
                         Text(episodeLabel)
                             .font(.system(size: 10, weight: .semibold))
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color.black.opacity(0.55))
+                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(Color.black.opacity(0.62))
                             .foregroundColor(.white)
-                            .cornerRadius(6)
-                            .padding(5)
+                            .clipShape(Capsule())
+                            .padding(7)
                     }
                 }
+                .overlay(alignment: .topTrailing) {
+                    if !scoreText.isEmpty {
+                        Text(scoreText)
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(
+                                LinearGradient(colors: [Color(red: 1.0, green: 0.62, blue: 0.11),
+                                                        Color(red: 0.98, green: 0.42, blue: 0.11)],
+                                               startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            .padding(6)
+                    }
+                }
+                .shadow(color: .black.opacity(0.10), radius: 5, y: 3)
             Text(title)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.primary)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
-            HStack(spacing: 5) {
-                if !scoreText.isEmpty {
-                    Text(scoreText)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.orange)
-                }
-                if !tagText.isEmpty {
-                    Text(tagText)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
+            if !tagText.isEmpty {
+                Text(tagText)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
             }
         }
     }

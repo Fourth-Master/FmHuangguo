@@ -83,51 +83,67 @@ struct DramaDetailView: View {
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // 头部：封面 + 信息
-                HStack(alignment: .top, spacing: 12) {
+                // Hero 头部：封面模糊背景 + 前景信息
+                ZStack(alignment: .bottomLeading) {
                     NetImage(urlString: d.cover)
-                        .frame(width: 112)
-                        .aspectRatio(0.72, contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(d.title)
-                            .font(.system(size: 17, weight: .semibold))
-                            .lineLimit(3)
-                        HStack(spacing: 8) {
-                            if let s = d.score, s > 0 {
-                                Text(String(format: "%.1f分", s))
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.orange)
+                        .frame(height: 210)
+                        .frame(maxWidth: .infinity)
+                        .clipped()
+                        .overlay(MaterialBlur())
+                        .overlay(LinearGradient(colors: [.black.opacity(0.30), .black.opacity(0.62)],
+                                                startPoint: .top, endPoint: .bottom))
+                    HStack(alignment: .bottom, spacing: 12) {
+                        NetImage(urlString: d.cover)
+                            .frame(width: 108)
+                            .aspectRatio(0.72, contentMode: .fit)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(d.title)
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.white)
+                                .lineLimit(3)
+                                .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                            HStack(spacing: 8) {
+                                if let s = d.score, s > 0 {
+                                    Text(String(format: "%.1f分", s))
+                                        .font(.system(size: 12, weight: .heavy))
+                                        .foregroundColor(Color(red: 1.0, green: 0.72, blue: 0.20))
+                                }
+                                Text(d.episodeCount.map { "\($0)集" } ?? "")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.white.opacity(0.85))
+                                if d.isFinished == true {
+                                    Text("已完结")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .padding(.horizontal, 6).padding(.vertical, 1)
+                                        .background(Color.green.opacity(0.85))
+                                        .foregroundColor(.white)
+                                        .cornerRadius(4)
+                                }
                             }
-                            Text(d.episodeCount.map { "\($0)集" } ?? "")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                            if d.isFinished == true {
-                                Text("已完结")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .padding(.horizontal, 6).padding(.vertical, 1)
-                                    .background(Color.green.opacity(0.12))
-                                    .foregroundColor(.green)
-                                    .cornerRadius(4)
-                            }
-                        }
-                        HStack(spacing: 6) {
-                            ForEach((d.tags ?? []).prefix(3), id: \.self) { t in
-                                Text(t)
-                                    .font(.system(size: 11))
-                                    .padding(.horizontal, 8).padding(.vertical, 3)
-                                    .background(Color(white: 0.94))
-                                    .foregroundColor(.secondary)
-                                    .cornerRadius(10)
+                            HStack(spacing: 6) {
+                                ForEach((d.tags ?? []).prefix(3), id: \.self) { t in
+                                    Text(t)
+                                        .font(.system(size: 11))
+                                        .padding(.horizontal, 8).padding(.vertical, 3)
+                                        .background(Color.white.opacity(0.18))
+                                        .foregroundColor(.white)
+                                        .cornerRadius(10)
+                                }
                             }
                         }
                         Spacer(minLength: 0)
                     }
+                    .padding(14)
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 0))
 
+                VStack(alignment: .leading, spacing: 16) {
                 // 操作按钮
                 HStack(spacing: 12) {
                     Button {
+                        haptic(.medium)
                         startEp = canResume ? (progress?.epNum ?? 1) : (eps.first?.epNum ?? 1)
                         if let d = model.detail {
                             // 播放时刷新历史基准集数（供下次更新检测）
@@ -148,8 +164,10 @@ struct DramaDetailView: View {
                                                    startPoint: .leading, endPoint: .trailing))
                         .foregroundColor(.white)
                         .cornerRadius(24)
+                        .shadow(color: Color(red: 0.98, green: 0.27, blue: 0.57).opacity(0.35), radius: 8, y: 3)
                     }
                     Button {
+                        haptic()
                         lib.toggleFavorite(dramaId: d.id,
                                            title: d.title,
                                            cover: d.cover ?? "",
@@ -224,10 +242,18 @@ struct DramaDetailView: View {
                         }
                     }
                 }
+                }
             }
-            .padding(14)
         }
     }
+
+    /// iOS 15 兼容的系统材质模糊层
+    struct MaterialBlur: View {
+        var body: some View {
+            VisualEffectBlur()
+        }
+    }
+}
 
     private func chipColor(_ ep: Episode, progress: PlayRecord?) -> Color {
         if ep.epNum == progress?.epNum { return Color.accentColor }
