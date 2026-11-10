@@ -71,9 +71,9 @@ final class VideoCacheManager: ObservableObject {
         let dir = baseDir.appendingPathComponent(key, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        updateState(key: key) {
-            CachedEpisodeState(dramaId: dramaId, epNum: epNum, title: title,
-                               progress: 0, done: false, localDir: dir.path, totalBytes: 0)
+        updateState(key: key) { st in
+            st = CachedEpisodeState(dramaId: dramaId, epNum: epNum, title: title,
+                                    progress: 0, done: false, localDir: dir.path, totalBytes: 0)
         }
 
         let task = Task {

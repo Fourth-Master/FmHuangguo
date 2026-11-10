@@ -313,7 +313,6 @@ struct PlayerScreen: View {
     @State private var lpDragBaseSpeed: Float = 1.0
     /// HUD 进度条数值（0~1，nil 隐藏），用于亮度/音量/快进
     @State private var hudProgress: Double?
-    @EnvironmentObject private var prefs: GesturePrefs
 
     init(detail: DramaDetail, startEp: Int) {
         self.detail = detail
@@ -521,8 +520,12 @@ struct PlayerScreen: View {
                             flashControls()
                         },
                         onScrub: { scrubbingValue in
-                            scrubValue = scrubbingValue
-                            scrubbing = scrubbingValue != nil
+                            if let v = scrubbingValue {
+                                scrubValue = v
+                                scrubbing = true
+                            } else {
+                                scrubbing = false
+                            }
                         })
                     .frame(height: 28)
 
