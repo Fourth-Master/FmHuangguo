@@ -341,10 +341,6 @@ struct PlayerScreen: View {
             PlayerLayerView(player: vm.player, fillMode: fillMode)
                 .allowsHitTesting(false)
 
-            // 手势层：在控制层之下，控制按钮/进度条优先接收触摸，
-            // 空白区域落到这一层处理 拖动快进/亮度/音量/长按倍速/单击/双击
-            gestureLayer(width: width)
-
             if vm.buffering && vm.error == nil {
                 ProgressView().tint(.white).scaleEffect(1.4)
             }
@@ -382,26 +378,24 @@ struct PlayerScreen: View {
         }
         .frame(height: landscape ? nil : height)
         .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .simultaneousGesture(gestureLayer(width: width))
     }
 
-    // MARK: 手势层（铺满播放区，但用高优先级让位控制层：控制按钮/进度条先拿触摸）
+    // MARK: 手势层
     //
-    // 之前 onTapGesture 直接挂在整个 ZStack 上会抢走顶部返回按钮/底部按钮的点击，
-    // 改为 simultaneousGesture + .highPriorityGesture 组合：
-    //   - 控制层 Button 命中时系统直接交给 Button（Button 在上层）
-    //   - 其余区域走单击/双击/长按/拖动手势
-    private func gestureLayer(width: CGFloat) -> some View {
-        Color.clear
-            .contentShape(Rectangle())
-            .gesture(
-                SimultaneousGesture(
-                    TapGesture(count: 2).onEnded { fillMode.toggle() },
-                    SimultaneousGesture(
-                        TapGesture().onEnded { flashControls() },
-                        SimultaneousGesture(longPressGesture, dragGesture(width: width))
-                    )
-                )
+    // 挂在整个播放区最外层（.simultaneousGesture），不放在 ZStack 子视图里。
+    // simultaneous 不会阻断 Button 的点击：Button 正常响应，空白区域则由这组
+    // 手势处理单击/双击/长按/拖动。之前放在 ZStack 中间层时，与上层 Button
+    // 存在 tap 竞态，导致右下角横屏/选集按钮偶尔无效。
+    private func gestureLayer(width: CGFloat) -> some Gesture {
+        SimultaneousGesture(
+            TapGesture(count: 2).onEnded { fillMode.toggle() },
+            SimultaneousGesture(
+                TapGesture().onEnded { flashControls() },
+                SimultaneousGesture(longPressGesture, dragGesture(width: width))
             )
+        )
     }
 
     // MARK: 控制层

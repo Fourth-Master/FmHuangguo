@@ -121,6 +121,21 @@ final class LibraryStore: ObservableObject {
         if changed { save() }
     }
 
+    // MARK: 更新检测缓存（每日启动检测 / 页面刷新共用）
+
+    /// 各剧集最新总集数（dramaId -> total），由每日检测与页面刷新共同维护
+    @Published private(set) var freshTotals: [Int: Int] = [:]
+
+    func cachedTotal(dramaId: Int) -> Int? {
+        freshTotals[dramaId]
+    }
+
+    /// 写入最新总集数（检测结果）
+    func applyFreshTotal(dramaId: Int, total: Int) {
+        guard total > 0 else { return }
+        freshTotals[dramaId] = total
+    }
+
     func removeHistory(dramaId: Int) {
         history.removeAll { $0.dramaId == dramaId }
         save()

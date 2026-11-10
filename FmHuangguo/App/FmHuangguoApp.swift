@@ -51,10 +51,15 @@ struct FmHuangguoApp: App {
 
 struct RootView: View {
     @EnvironmentObject private var app: AppState
+    @EnvironmentObject private var lib: LibraryStore
 
     var body: some View {
         if app.phase == .ready {
             MainTabView()
+                .task {
+                    // 进入主界面后静默执行每日更新检测（历史+收藏，当天仅一次）
+                    await UpdateChecker.checkIfNeeded(lib: lib)
+                }
         } else {
             RouteSplashView()
         }

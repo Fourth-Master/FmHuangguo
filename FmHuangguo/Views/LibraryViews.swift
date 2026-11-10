@@ -9,9 +9,8 @@ struct HistoryView: View {
     @State private var playerTarget: PlayerTarget?
     @State private var openError: String?
     @State private var showOpenError = false
-    /// 当前各剧集最新总集数（dramaId -> total），用于"已更新至X集"红字
-    @State private var freshTotals: [Int: Int] = [:]
     @State private var checkedIds = Set<Int>()
+
 
     var body: some View {
         Group {
@@ -83,18 +82,22 @@ struct HistoryView: View {
         }
     }
 
-    /// 批量刷新历史剧集的最新总集数（只查尚未检查过、且可能有更新的条目）
+    /// 批量刷新历史剧集的最新总集数（优先用每日检测的共享缓存，缺的才逐条查）
     private func refreshTotals() async {
         for rec in lib.history {
-            guard !checkedIds.contains(rec.dramaId), rec.seenTotalEpisodes > 0 else { continue }
-            // 已是最新（缓存值与基准一致）不再请求
-            if let cached = freshTotals[rec.dramaId], cached == rec.seenTotalEpisodes { continue }
+            guard rec.seenTotalEpisodes > 0 else { continue }
+            // 共享缓存已有结果直接用
+            if let cached = lib.freshTotals[rec.dramaId] {
+                if cached == rec.seenTotalEpisodes { continue }
+                continue // 有缓存（无论是否有更新）不再重复请求
+            }
+            guard !checkedIds.contains(rec.dramaId) else { continue }
             do {
                 let d = try await SiteAPI.shared.detail(id: rec.dramaId)
                 let total = d.totalEpisodes ?? d.episodeCount ?? 0
                 checkedIds.insert(rec.dramaId)
                 if total > 0 {
-                    freshTotals[rec.dramaId] = total
+                    lib.applyFreshTotal(dramaId: rec.dramaId, total: total)
                 }
             } catch {
                 // 静默：单条失败不影响列表
@@ -114,7 +117,7 @@ struct HistoryView: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                 // 更新提示红字（在"看到 第X集"上方）
-                if let current = freshTotals[rec.dramaId],
+                if let current = lib.freshTotals[rec.dramaId],
                    lib.historyHasUpdate(rec, currentTotal: current) {
                     Text("已更新至\(current)集")
                         .font(.system(size: 12, weight: .semibold))
@@ -243,20 +246,22 @@ struct FavoritesView: View {
     }
 
     private func hasUpdate(_ fav: FavoriteItem) -> Bool {
-        guard let current = freshTotals[fav.dramaId] else { return false }
+        guard let current = lib.freshTotals[fav.dramaId] else { return false }
         return lib.favoriteHasUpdate(fav, currentTotal: current)
     }
 
+    /// 批量刷新收藏剧集的最新总集数（优先用每日检测的共享缓存）
     private func refreshTotals() async {
         for fav in lib.favorites {
-            guard !checkedIds.contains(fav.dramaId) else { continue }
             guard !fav.isFinished else { continue }  // 已完结不会有更新
+            if lib.freshTotals[fav.dramaId] != nil { continue } // 共享缓存已有
+            guard !checkedIds.contains(fav.dramaId) else { continue }
             do {
                 let d = try await SiteAPI.shared.detail(id: fav.dramaId)
                 let total = d.totalEpisodes ?? d.episodeCount ?? 0
                 checkedIds.insert(fav.dramaId)
                 if total > 0 {
-                    freshTotals[fav.dramaId] = total
+                    lib.applyFreshTotal(dramaId: fav.dramaId, total: total)
                 }
             } catch {
                 // 静默
