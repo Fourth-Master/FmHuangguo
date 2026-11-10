@@ -19,6 +19,8 @@ struct FmHuangguoApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var app = AppState()
     @StateObject private var lib = LibraryStore.shared
+    @StateObject private var gesturePrefs = GesturePrefs.shared
+    @StateObject private var cacheManager = VideoCacheManager.shared
 
     init() {
         // 底部 TabBar / 导航栏不透明背景（修复 iOS 15 半透明导致的"全透明"观感）
@@ -44,6 +46,8 @@ struct FmHuangguoApp: App {
             RootView()
                 .environmentObject(app)
                 .environmentObject(lib)
+                .environmentObject(gesturePrefs)
+                .environmentObject(cacheManager)
                 .preferredColorScheme(.light)
         }
     }
@@ -75,10 +79,6 @@ struct MainTabView: View {
                 .navigationViewStyle(.stack)
                 .tabItem { Label("首页", systemImage: "play.rectangle.fill") }
 
-            NavigationView { SearchView() }
-                .navigationViewStyle(.stack)
-                .tabItem { Label("搜索", systemImage: "magnifyingglass") }
-
             NavigationView { HistoryView() }
                 .navigationViewStyle(.stack)
                 .tabItem { Label("历史", systemImage: "clock.arrow.circlepath") }
@@ -86,6 +86,10 @@ struct MainTabView: View {
             NavigationView { FavoritesView() }
                 .navigationViewStyle(.stack)
                 .tabItem { Label("收藏", systemImage: "heart.fill") }
+
+            NavigationView { DownloadsView() }
+                .navigationViewStyle(.stack)
+                .tabItem { Label("缓存", systemImage: "arrow.down.circle.fill") }
 
             NavigationView { SettingsView() }
                 .navigationViewStyle(.stack)

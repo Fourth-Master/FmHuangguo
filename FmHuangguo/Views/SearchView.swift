@@ -31,6 +31,8 @@ struct SearchView: View {
     @StateObject private var model = SearchModel()
     @State private var text = ""
     @State private var history: [String] = UserDefaults.standard.stringArray(forKey: "search_history") ?? []
+    /// 外部带入的关键词（热门标签等），非空则自动搜索
+    var initialKeyword: String = ""
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
@@ -45,6 +47,12 @@ struct SearchView: View {
         }
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if !initialKeyword.isEmpty, text.isEmpty {
+                text = initialKeyword
+                Task { await model.search(initialKeyword) }
+            }
+        }
     }
 
     private var searchBar: some View {

@@ -99,6 +99,23 @@ final class SiteAPI {
         return (d.items ?? [], d.pagination)
     }
 
+    // MARK: 热门标签（/api/search/tags/hot?type=video）
+
+    func hotTags() async throws -> [String] {
+        let resp: APIResponse<HotTagsData> = try await request("/api/search/tags/hot", query: ["type": "video"])
+        guard resp.status == 1, let d = resp.data else { return [] }
+        return (d.items ?? []).map(\.name)
+    }
+
+    struct HotTagItem: Decodable {
+        let name: String
+        let heat: Int?
+    }
+
+    struct HotTagsData: Decodable {
+        let items: [HotTagItem]?
+    }
+
     // MARK: 详情
 
     func detail(id: Int) async throws -> DramaDetail {

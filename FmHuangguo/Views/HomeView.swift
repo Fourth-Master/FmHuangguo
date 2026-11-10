@@ -155,6 +155,8 @@ final class HomeModel: ObservableObject {
 struct HomeView: View {
     @EnvironmentObject private var app: AppState
     @StateObject private var model = HomeModel()
+    @State private var hotTags: [String] = []
+    @State private var showSearch = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
@@ -165,15 +167,71 @@ struct HomeView: View {
     var body: some View {
         VStack(spacing: 0) {
             chipsRow
+            hotTagsRow
             content
         }
         .navigationTitle("Fm黄果")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showSearch = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 16, weight: .medium))
+                }
+            }
+        }
+        .sheet(isPresented: $showSearch) {
+            NavigationView { SearchView() }
+                .navigationViewStyle(.stack)
+        }
         .task(id: "\(model.category)|\(model.sort)") {
             await model.reload()
         }
+        .task {
+            if hotTags.isEmpty { await loadHotTags() }
+        }
         .refreshable {
             await model.reload()
+            await loadHotTags()
+        }
+    }
+
+    private func loadHotTags() async {
+        do {
+            let tags = try await SiteAPI.shared.hotTags()
+            await MainActor.run { hotTags = Array(tags.prefix(8)) }
+        } catch {
+            // 静默：热门标签获取失败不影响列表
+        }
+    }
+
+    /// 热门标签行（🔥 前缀 + 标签 chips，点击进搜索页搜该词）
+    @ViewBuilder
+    private var hotTagsRow: some View {
+        if !hotTags.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.orange)
+                    ForEach(hotTags, id: \.self) { tag in
+                        NavigationLink {
+                            SearchView(initialKeyword: tag)
+                        } label: {
+                            Text(tag)
+                                .font(.system(size: 12))
+                                .padding(.horizontal, 11).padding(.vertical, 5)
+                                .background(Color.orange.opacity(0.10))
+                                .foregroundColor(.orange)
+                                .cornerRadius(13)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+            .padding(.bottom, 6)
         }
     }
 

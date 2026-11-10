@@ -24,6 +24,9 @@ final class PlayerViewModel: ObservableObject {
     private var lastSaveAt = Date.distantPast
     /// seek 未完成期间锁住 tick 对 current 的覆盖（修复滑动快进后时间卡住/回跳）
     var scrubbingTarget: Double?
+    /// 最近一次加载的播放地址与 CDN 头（供缓存下载复用）
+    @Published var lastLoadedURL: String = ""
+    @Published var lastCdnHeaders: [String: String] = [:]
 
     let speeds: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
 
@@ -88,6 +91,22 @@ final class PlayerViewModel: ObservableObject {
                 "Referer": SiteAPI.shared.base + "/",
                 "User-Agent": RouteService.ua,
             ]
+
+            // 优先本地缓存：已缓存直接离线播放
+            if let local = VideoCacheManager.shared.localM3U8URL(dramaId: detail.id, epNum: ep.epNum) {
+                DebugLogger.shared.log("离线播放 ep=\(ep.epNum) \(local.lastPathComponent)")
+                await MainActor.run {
+                    let item = AVPlayerItem(url: local)
+                    self.player.replaceCurrentItem(with: item)
+                    if let r = resume, r > 10 {
+                        self.player.seek(to: CMTime(seconds: r, preferredTimescale: 600))
+                    }
+                    self.player.play()
+                    self.applySpeed(self.speed)
+                }
+                return
+            }
+
             if ep.videoId.isEmpty && ep.epNum == 1, let fu = detail.firstPlayUrl, !fu.isEmpty {
                 // 兜底：详情自带的直播地址
                 urlStr = fu
@@ -99,8 +118,11 @@ final class PlayerViewModel: ObservableObject {
                 for (k, v) in SiteAPI.shared.cdnHeaders(pb.cdn) {
                     headers[k] = v
                 }
+                // 记住本次 CDN 头（供缓存下载使用）
+                await MainActor.run { self.lastCdnHeaders = headers }
                 DebugLogger.shared.log("播放 playback ep=\(ep.epNum) videoId=\(ep.videoId) url=\(String(urlStr.prefix(110))) headers=\(SiteAPI.shared.cdnHeaders(pb.cdn).keys.joined(separator: ","))")
             }
+            await MainActor.run { self.lastLoadedURL = urlStr }
             guard let url = URL(string: urlStr) else { throw APIError.noPlayURL }
 
             // AVURLAssetHTTPHeaderFieldsKey：m3u8 及其分片/密钥请求都会带上这些头
@@ -258,6 +280,8 @@ struct PlayerScreen: View {
     let startEp: Int
 
     @EnvironmentObject private var lib: LibraryStore
+    @EnvironmentObject private var prefs: GesturePrefs
+    @EnvironmentObject private var cacheManager: VideoCacheManager
     @Environment(\.dismiss) private var dismiss
     @StateObject private var vm: PlayerViewModel
 
@@ -285,8 +309,11 @@ struct PlayerScreen: View {
     @GestureState private var longPressActive: Bool = false
     @State private var speedBeforeLongPress: Float = 1.0
     @State private var longPressEngaged = false
+    /// 长按后上下滑微调倍速（0.5x~3x 步进 0.25）
+    @State private var lpDragBaseSpeed: Float = 1.0
     /// HUD 进度条数值（0~1，nil 隐藏），用于亮度/音量/快进
     @State private var hudProgress: Double?
+    @EnvironmentObject private var prefs: GesturePrefs
 
     init(detail: DramaDetail, startEp: Int) {
         self.detail = detail
@@ -390,7 +417,7 @@ struct PlayerScreen: View {
     // 存在 tap 竞态，导致右下角横屏/选集按钮偶尔无效。
     private func gestureLayer(width: CGFloat) -> some Gesture {
         SimultaneousGesture(
-            TapGesture(count: 2).onEnded { fillMode.toggle() },
+            TapGesture(count: 2).onEnded { handleDoubleTap() },
             SimultaneousGesture(
                 TapGesture().onEnded { flashControls() },
                 SimultaneousGesture(longPressGesture, dragGesture(width: width))
@@ -486,26 +513,18 @@ struct PlayerScreen: View {
                     .foregroundColor(.white.opacity(0.85))
                     .monospacedDigit()
 
-                Slider(
-                    value: Binding(
-                        get: { min(max(0, displayTime), max(vm.duration, 0.001)) },
-                        set: { newValue in
-                            scrubValue = newValue
-                            scrubbing = true
-                        }
-                    ),
-                    in: 0...max(vm.duration, 0.001)
-                ) { editing in
-                    if editing {
-                        scrubbing = true
-                        scrubValue = vm.current
-                    } else {
-                        scrubbing = false
-                        let target = scrubValue
-                        Task { await vm.seek(to: target) }
-                        flashControls()
-                    }
-                }                .accentColor(.white)
+                // 自定义进度条：支持点击跳转 + 拖动（Slider 与外层手势有竞态）
+                SeekBar(current: displayTime,
+                        duration: max(vm.duration, 0.001),
+                        onSeek: { target in
+                            Task { await vm.seek(to: target) }
+                            flashControls()
+                        },
+                        onScrub: { scrubbingValue in
+                            scrubValue = scrubbingValue
+                            scrubbing = scrubbingValue != nil
+                        })
+                    .frame(height: 28)
 
                 Text(fmtTime(vm.duration))
                     .font(.system(size: 11))
@@ -539,6 +558,15 @@ struct PlayerScreen: View {
                         .foregroundColor(.white)
                 }
 
+                // 缓存当前集
+                Button {
+                    cacheCurrentEpisode()
+                } label: {
+                    Image(systemName: cacheStateIcon)
+                        .font(.system(size: 15))
+                        .foregroundColor(.white)
+                }
+
                 Button {
                     rotate()
                 } label: {
@@ -561,6 +589,44 @@ struct PlayerScreen: View {
 
     private var displayTime: Double {
         scrubbing ? scrubValue : vm.current
+    }
+
+    // MARK: 缓存当前集
+
+    private var cacheStateIcon: String {
+        if let st = cacheManager.state(dramaId: detail.id, epNum: vm.episode.epNum) {
+            if st.done { return "checkmark.circle.fill" }
+            if st.progress < 0 { return "exclamationmark.circle" }
+            return "arrow.down.circle.fill"
+        }
+        return "arrow.down.circle"
+    }
+
+    private func cacheCurrentEpisode() {
+        guard let urlStr = vm.lastLoadedURL.isEmpty ? nil : vm.lastLoadedURL,
+              let url = URL(string: urlStr) else {
+            hudText = "请先播放后再缓存"
+            hudProgress = nil
+            hudVisible = true
+            hideHudAfterDelay()
+            return
+        }
+        if VideoCacheManager.shared.isCached(dramaId: detail.id, epNum: vm.episode.epNum) {
+            hudText = "本集已缓存"
+            hudProgress = nil
+            hudVisible = true
+            hideHudAfterDelay()
+            return
+        }
+        VideoCacheManager.shared.download(dramaId: detail.id, epNum: vm.episode.epNum,
+                                          title: detail.title,
+                                          m3u8URL: url,
+                                          headers: vm.lastCdnHeaders)
+        hudText = "开始缓存本集"
+        hudProgress = nil
+        hudVisible = true
+        hideHudAfterDelay()
+        haptic(.medium)
     }
 
     private func errorOverlay(_ err: String) -> some View {
@@ -640,8 +706,7 @@ struct PlayerScreen: View {
 
     // MARK: 手势
 
-    /// 长按 2x 倍速播放（松开恢复原速）。
-    /// GestureState(isActive:)：无论多快松手，手势结束都会把 longPressActive 复位并触发 onEnd。
+    /// 长按：按偏好执行（默认临时 2x；上下滑按偏好执行，默认调倍速）
     private var longPressGesture: some Gesture {
         LongPressGesture(minimumDuration: 0.5)
             .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
@@ -651,25 +716,73 @@ struct PlayerScreen: View {
                 }
             }
             .onChanged { value in
-                if case .second(true, _) = value {
+                if case .second(true, let drag) = value {
                     if !longPressEngaged {
                         longPressEngaged = true
                         speedBeforeLongPress = vm.speed
-                        vm.setSpeed(2.0)
-                        hudText = "2x 倍速播放中"
-                        hudProgress = nil
+                        lpDragBaseSpeed = vm.speed
+                        switch prefs.longPress {
+                        case .speedUpLongPress:
+                            vm.setSpeed(2.0)
+                            hudText = "2x 倍速播放中"
+                            hudProgress = nil
+                        case .togglePlay:
+                            vm.togglePlay()
+                        case .fillToggle:
+                            fillMode.toggle()
+                        case .speedDrag, .none:
+                            hudText = "上下滑动调节倍速"
+                            hudProgress = nil
+                        }
                         hudVisible = true
                         haptic(.medium)
+                    } else if prefs.longPress == .speedDrag || prefs.longPressVerticalDrag == .speedDrag {
+                        // 长按后上下滑：每 45pt 调 0.25x（上增下减，0.5x~3x）
+                        let dy = drag?.translation.height ?? 0
+                        let steps = Int(-dy / 45)
+                        let target = max(0.5, min(3.0, lpDragBaseSpeed + Float(steps) * 0.25))
+                        if abs(target - vm.speed) >= 0.001 {
+                            vm.setSpeed(target)
+                            hudText = "倍速 \(speedLabel(target))"
+                            hudProgress = Double((target - 0.5) / 2.5)
+                        }
                     }
                 }
             }
             .onEnded { _ in
                 if longPressEngaged {
                     longPressEngaged = false
-                    vm.setSpeed(speedBeforeLongPress)
+                    if prefs.longPress == .speedUpLongPress {
+                        vm.setSpeed(speedBeforeLongPress)
+                    }
                     hudVisible = false
                 }
             }
+    }
+
+    /// 双击：按偏好执行
+    private func handleDoubleTap() {
+        switch prefs.doubleTap {
+        case .togglePlay:
+            vm.togglePlay()
+            flashControls()
+        case .fillToggle:
+            fillMode.toggle()
+        case .speedUpLongPress:
+            vm.setSpeed(vm.speed >= 2.0 ? 1.0 : 2.0)
+            hudText = "倍速 \(speedLabel(vm.speed))"
+            hudVisible = true
+            hideHudAfterDelay()
+        case .speedDrag, .none:
+            break
+        }
+    }
+
+    private func hideHudAfterDelay() {
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            hudVisible = false
+        }
     }
 
     private func dragGesture(width: CGFloat) -> some Gesture {
@@ -759,5 +872,58 @@ struct PlayerScreen: View {
     private func speedLabel(_ s: Float) -> String {
         if s == floorf(s) { return "\(Int(s))x" }
         return "\(s)x"
+    }
+}
+
+// MARK: - 自定义进度条（点击跳转 + 拖动 seek，替代 Slider 的手势竞态问题）
+
+struct SeekBar: View {
+    let current: Double
+    let duration: Double
+    let onSeek: (Double) -> Void
+    let onScrub: (Double?) -> Void
+
+    @State private var dragValue: Double?
+
+    private var progress: Double {
+        if let dv = dragValue { return min(1, max(0, dv / max(duration, 0.001))) }
+        return min(1, max(0, current / max(duration, 0.001)))
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            ZStack(alignment: .leading) {
+                // 轨道
+                Capsule()
+                    .fill(Color.white.opacity(0.28))
+                    .frame(height: 4)
+                // 已播
+                Capsule()
+                    .fill(Color.white)
+                    .frame(width: max(0, w * progress), height: 4)
+                // 手柄
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: progress > 0 ? 12 : 0, height: 12)
+                    .offset(x: max(0, w * progress - 6))
+            }
+            .frame(maxHeight: .infinity, alignment: .center)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { v in
+                        let t = min(max(0, v.location.x / max(w, 1)), 1) * duration
+                        dragValue = t
+                        onScrub(t)
+                    }
+                    .onEnded { _ in
+                        let t = dragValue ?? 0
+                        dragValue = nil
+                        onScrub(nil)
+                        onSeek(t)
+                    }
+            )
+        }
     }
 }

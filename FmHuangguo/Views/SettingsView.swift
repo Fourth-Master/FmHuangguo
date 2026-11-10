@@ -4,6 +4,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var app: AppState
+    @EnvironmentObject private var gesturePrefs: GesturePrefs
+    @EnvironmentObject private var cache: VideoCacheManager
     @State private var cacheCleared = false
     @State private var logCleared = false
     @State private var showLogViewer = false
@@ -11,6 +13,28 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section(header: Text("播放器手势自定义")) {
+                gesturePicker(title: "双击画面", slot: "gesture_double_tap",
+                              binding: Binding(get: { gesturePrefs.doubleTap },
+                                               set: { gesturePrefs.set($0, for: "gesture_double_tap") }))
+                gesturePicker(title: "长按画面", slot: "gesture_long_press",
+                              binding: Binding(get: { gesturePrefs.longPress },
+                                               set: { gesturePrefs.set($0, for: "gesture_long_press") }))
+                gesturePicker(title: "长按后上下滑动", slot: "gesture_lp_drag",
+                              binding: Binding(get: { gesturePrefs.longPressVerticalDrag },
+                                               set: { gesturePrefs.set($0, for: "gesture_lp_drag") }))
+                Button {
+                    gesturePrefs.reset()
+                } label: {
+                    Text("恢复默认手势")
+                        .font(.system(size: 14))
+                }
+            }
+
+            Section(header: Text("离线缓存")) {
+                row("已缓存视频数", "\(cache.cachedEpisodes.values.filter { $0.done }.count) 集")
+                row("占用空间", ByteCountFormatter.string(fromByteCount: cache.totalSize(), countStyle: .file))
+            }
             Section(header: Text("线路（点击切换）")) {
                 if app.routes.isEmpty {
                     HStack {
@@ -145,6 +169,16 @@ struct SettingsView: View {
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
         }
+    }
+
+    /// 手势动作选择器
+    private func gesturePicker(title: String, slot: String, binding: Binding<PlayerGestureAction>) -> some View {
+        Picker(title, selection: binding) {
+            ForEach(PlayerGestureAction.allCases) { action in
+                Text(action.label).tag(action)
+            }
+        }
+        .font(.system(size: 14))
     }
 }
 
