@@ -22,8 +22,9 @@ final class PlayerViewModel: ObservableObject {
     private var endObserver: NSObjectProtocol?
     private var statusSub: AnyCancellable?
     private var lastSaveAt = Date.distantPast
-    /// seek 未完成期间锁住 tick 对 current 的覆盖（修复滑动快进后时间卡住/回跳）
+    /// seek 锁：锁住期间 tick 不覆盖 UI 时间（带时间戳，超时自动失效防死锁）
     var scrubbingTarget: Double?
+    var scrubbingTargetAt: Date = .distantPast
     /// 最近一次加载的播放地址与 CDN 头（供缓存下载复用）
     @Published var lastLoadedURL: String = ""
     @Published var lastCdnHeaders: [String: String] = [:]
@@ -177,14 +178,16 @@ final class PlayerViewModel: ObservableObject {
     func seek(to t: Double) {
         let target = max(0, min(duration, t))
         current = target
+        // seek 锁（带超时防死锁）：锁住期间 tick 不覆盖 UI 时间
         scrubbingTarget = target
+        scrubbingTargetAt = Date()
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600),
                     toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                // seek 完成后以播放器实际时间为准，并允许 tick 恢复更新
+                // seek 完成后以播放器实际时间为准并解锁
                 self.current = CMTimeGetSeconds(self.player.currentTime())
-                if self.scrubbingTarget == target { self.scrubbingTarget = nil }
+                self.scrubbingTarget = nil
             }
         }
         saveProgress()
@@ -221,9 +224,11 @@ final class PlayerViewModel: ObservableObject {
 
     private func tick(_ time: CMTime) {
         let sec = CMTimeGetSeconds(time)
-        // seek 进行中不覆盖 UI 时间，避免卡住/回跳
-        if scrubbingTarget == nil, sec.isFinite, sec >= 0 {
+        // seek 锁：锁住期间不覆盖 UI 时间；超过 2 秒视为死锁自动解锁
+        let lockExpired = Date().timeIntervalSince(scrubbingTargetAt) > 2.0
+        if (scrubbingTarget == nil || lockExpired), sec.isFinite, sec >= 0 {
             current = sec
+            if lockExpired { scrubbingTarget = nil }
         }
         if let item = player.currentItem, item.duration.isNumeric {
             let d = CMTimeGetSeconds(item.duration)
@@ -725,7 +730,6 @@ struct PlayerScreen: View {
                     if !longPressEngaged {
                         longPressEngaged = true
                         speedBeforeLongPress = vm.speed
-                        lpDragBaseSpeed = vm.speed
                         // 长按激活：取消本次触摸可能已进入的亮度/音量/快进模式
                         // （把系统亮度/音量不动，仅放弃本次 drag 会话，HUD 交给倍速）
                         dragMode = .lockedByLongPress
@@ -733,13 +737,19 @@ struct PlayerScreen: View {
                         switch prefs.longPress {
                         case .speedUpLongPress:
                             vm.setSpeed(2.0)
+                            // 上下滑以激活后的速度（2x）为基准继续微调
+                            lpDragBaseSpeed = 2.0
                             hudText = "2x 倍速播放中"
                             hudProgress = nil
                         case .togglePlay:
                             vm.togglePlay()
+                            lpDragBaseSpeed = vm.speed
                         case .fillToggle:
                             fillMode.toggle()
+                            lpDragBaseSpeed = vm.speed
                         case .speedDrag, .none:
+                            // 纯上下滑调倍速：从当前速起步
+                            lpDragBaseSpeed = vm.speed
                             hudText = "上下滑动调节倍速"
                             hudProgress = nil
                         }
@@ -847,7 +857,8 @@ struct PlayerScreen: View {
                 }
             }
             .onEnded { _ in
-                if dragMode == .seek {
+                // 锁定态（长按倍速会话）绝不执行 seek——否则上下滑调倍速会被当成快进跳播
+                if dragMode == .seek, !longPressEngaged {
                     let target = scrubValue
                     Task { await vm.seek(to: target) }
                 }
