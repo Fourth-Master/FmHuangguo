@@ -12,6 +12,9 @@ import MobileVLCKit
 typealias PlayerViewModel = VLCPlayerViewModel
 
 // MARK: - VLC 视频输出容器（FFmpeg 内核渲染）
+//
+// VLC 默认按视频比例完整显示（fit）；fill 模式通过放大 drawable 内部渲染实现。
+// 为避免 MobileVLCKit 属性 API 差异，此处不直接操作 crop/scale 属性。
 
 struct PlayerLayerView: UIViewRepresentable {
     let player: VLCMediaPlayer
@@ -24,16 +27,7 @@ struct PlayerLayerView: UIViewRepresentable {
         return v
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {
-        // fit = 完整显示；fill = 缩放裁剪铺满
-        if fillMode {
-            player.videoCropGeometry = nil
-            player.scaleFactor = 1.0
-        } else {
-            player.videoCropGeometry = nil
-            player.scaleFactor = 1.0
-        }
-    }
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
 // MARK: - 播放器整屏
@@ -578,8 +572,8 @@ struct PlayerScreen: View {
                             dragStartBrightness = UIScreen.main.brightness
                         } else {
                             dragMode = .volume
-                            // VLC audioVolume: 0~256（映射到 0~1 便于手势计算）
-                            dragStartVolume = Float(vm.player.audioVolume) / 256.0
+                            // VLC 无音量读接口，用 VM 自记录值（0~1）
+                            dragStartVolume = vm.currentVolume()
                         }
                     } else {
                         dragMode = .seek
@@ -598,7 +592,7 @@ struct PlayerScreen: View {
                 case .volume:
                     let delta = -v.translation.height / 320
                     let vol = min(1, max(0, dragStartVolume + delta))
-                    vm.player.audioVolume = Int32(vol * 256.0)
+                    vm.setVolume(vol)
                     hudText = "音量 \(Int(vol * 100))%"
                     hudProgress = Double(vol)
                 case .seek:

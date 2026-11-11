@@ -50,7 +50,7 @@ struct FmHuangguoApp: App {
                 .environmentObject(gesturePrefs)
                 .environmentObject(cacheManager)
                 .environmentObject(theme)
-                .preferredColorScheme(theme.scheme.colorScheme)
+                .preferredColorScheme(theme.mode.colorScheme)
         }
     }
 }

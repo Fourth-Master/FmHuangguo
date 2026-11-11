@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AVFoundation
 import MobileVLCKit
 
 // MARK: - FFmpeg(VLC) 内核播放器视图模型
@@ -111,7 +112,7 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
             if let local = VideoCacheManager.shared.localM3U8URL(dramaId: detail.id, epNum: ep.epNum) {
                 DebugLogger.shared.log("离线播放(FFmpeg) ep=\(ep.epNum) \(local.lastPathComponent)")
                 await MainActor.run {
-                    self.player.setMedia(VLCMedia(url: local))
+                    self.player.media = VLCMedia(url: local)
                     self.startPlayback()
                 }
                 return
@@ -133,12 +134,14 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
             guard let url = URL(string: urlStr) else { throw APIError.noPlayURL }
 
             let media = VLCMedia(url: url)
-            // 请求头注入（m3u8 与分片请求都会带上）
+            // 请求头注入（m3u8 与分片请求都会带上）：VLC 选项形如 --http-xxx
+            var opts: [String] = []
             for (k, v) in headers {
-                media.add(toOptions: ["http-\(k.lowercased())": v])
+                opts.append(":http-\(k.lowercased())=\(v)")
             }
+            media.addOptions(opts)
             await MainActor.run {
-                self.player.setMedia(media)
+                self.player.media = media
                 self.startPlayback()
             }
         } catch {
@@ -177,6 +180,18 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
     }
 
     // MARK: 播放控制
+
+    /// 音量 0~1（VLC setVolume: 0~256；VLC 无读接口，自记录）
+    private var storedVolume: Float = 1.0
+
+    func setVolume(_ normalized: Float) {
+        storedVolume = max(0, min(1, normalized))
+        player.setVolume(Int32(storedVolume * 256.0))
+    }
+
+    func currentVolume() -> Float {
+        storedVolume
+    }
 
     func togglePlay() {
         if playing {
@@ -251,16 +266,11 @@ struct VLCPlayerLayerView: UIViewRepresentable {
     func makeUIView(context: Context) -> VLCPlayerContainerView {
         let v = VLCPlayerContainerView()
         vm.player.drawable = v
-        vm.player.videoAspectRatio = nil
         v.mediaPlayer = vm.player
         return v
     }
 
     func updateUIView(_ uiView: VLCPlayerContainerView, context: Context) {
-        // fill: 缩放裁剪铺满；fit: 完整显示（VLC 用 scale 与 aspect 控制）
-        if fillMode {
-            vm.player.videoCropGeometry = nil
-            vm.player.scaleFactor = 1.0
-        }
+        // fit/fill 由 VLC 默认比例显示处理，属性级 crop 各版本 API 有差异，不直接操作
     }
 }
