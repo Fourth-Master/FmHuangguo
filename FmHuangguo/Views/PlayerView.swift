@@ -839,7 +839,7 @@ struct PlayerScreen: View {
                     hudProgress = vm.duration > 0 ? target / vm.duration : nil
                     scrubValue = target
                     scrubbing = true
-                case .none:
+                case .none, .lockedByLongPress:
                     break
                 }
                 if dragMode != .none {
