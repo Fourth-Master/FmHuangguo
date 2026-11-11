@@ -135,9 +135,9 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
 
             let media = VLCMedia(url: url)
             // 请求头注入（m3u8 与分片请求都会带上）：VLC 选项形如 --http-xxx
-            var opts: [String] = []
+            var opts: [AnyHashable: Any] = [:]
             for (k, v) in headers {
-                opts.append(":http-\(k.lowercased())=\(v)")
+                opts[":http-\(k.lowercased())"] = v
             }
             media.addOptions(opts)
             await MainActor.run {
@@ -181,12 +181,12 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
 
     // MARK: 播放控制
 
-    /// 音量 0~1（VLC setVolume: 0~256；VLC 无读接口，自记录）
+    /// 音量 0~1（VLC volume 属性 0~256；VLC 无读接口，自记录）
     private var storedVolume: Float = 1.0
 
     func setVolume(_ normalized: Float) {
         storedVolume = max(0, min(1, normalized))
-        player.setVolume(Int32(storedVolume * 256.0))
+        player.volume = Int32(storedVolume * 256.0)
     }
 
     func currentVolume() -> Float {
@@ -238,11 +238,13 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
     // MARK: 内部
 
     private func tick() {
-        if let t = player.time?.intValue, t > 0 {
+        let t = player.time.intValue
+        if t > 0 {
             let sec = Double(t) / 1000.0
             if sec.isFinite, sec >= 0 { current = sec }
         }
-        if let d = player.media?.length?.intValue, d > 0 {
+        let d = player.media?.length.intValue ?? 0
+        if d > 0 {
             let sec = Double(d) / 1000.0
             if sec.isFinite, sec > 0 { duration = sec }
         }
