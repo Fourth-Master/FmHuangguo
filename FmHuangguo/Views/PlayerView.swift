@@ -303,6 +303,8 @@ struct PlayerScreen: View {
 
     enum DragMode: Equatable {
         case none, brightness, volume, seek
+        /// 长按已激活（倍速会话）：本次触摸屏蔽亮度/音量/快进分类
+        case lockedByLongPress
     }
 
     // 长按倍速（@GestureState 保证任何结束路径都会回滚速度）
@@ -724,6 +726,10 @@ struct PlayerScreen: View {
                         longPressEngaged = true
                         speedBeforeLongPress = vm.speed
                         lpDragBaseSpeed = vm.speed
+                        // 长按激活：取消本次触摸可能已进入的亮度/音量/快进模式
+                        // （把系统亮度/音量不动，仅放弃本次 drag 会话，HUD 交给倍速）
+                        dragMode = .lockedByLongPress
+                        scrubbing = false
                         switch prefs.longPress {
                         case .speedUpLongPress:
                             vm.setSpeed(2.0)
@@ -792,6 +798,11 @@ struct PlayerScreen: View {
         DragGesture(minimumDistance: 14)
             .onChanged { v in
                 if dragMode == .none {
+                    // 长按倍速会话进行中：本次触摸锁定，不再进入亮度/音量/快进
+                    if longPressEngaged {
+                        dragMode = .lockedByLongPress
+                        return
+                    }
                     let vertical = abs(v.translation.height) > abs(v.translation.width)
                     if vertical {
                         if v.startLocation.x < width / 2 {
@@ -806,6 +817,8 @@ struct PlayerScreen: View {
                         dragStartTime = vm.current
                     }
                 }
+                // 长按锁定期间完全让给倍速手势（倍速 HUD 由 longPressGesture 自己更新）
+                guard dragMode != .lockedByLongPress else { return }
                 switch dragMode {
                 case .brightness:
                     let delta = -v.translation.height / 320
