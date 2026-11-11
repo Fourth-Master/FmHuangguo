@@ -183,7 +183,7 @@ struct DramaDetailView: View {
                             .font(.system(size: 20))
                             .foregroundColor(lib.isFavorite(d.id) ? .pink : .secondary)
                             .frame(width: 48, height: 48)
-                            .background(Color(white: 0.94))
+                            .background(Color(.secondarySystemBackground))
                             .cornerRadius(24)
                     }
                 }
@@ -256,7 +256,7 @@ struct DramaDetailView: View {
             .padding(.vertical, 9)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isCurrent ? Color.accentColor : Color(white: 0.94))
+                    .fill(isCurrent ? Color.accentColor : Color(.secondarySystemBackground))
             )
             .overlay(alignment: .topTrailing) {
                 if isWatched && !isCurrent {

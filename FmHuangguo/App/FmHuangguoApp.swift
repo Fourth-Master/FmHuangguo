@@ -21,6 +21,7 @@ struct FmHuangguoApp: App {
     @StateObject private var lib = LibraryStore.shared
     @StateObject private var gesturePrefs = GesturePrefs.shared
     @StateObject private var cacheManager = VideoCacheManager.shared
+    @StateObject private var theme = ThemePrefs.shared
 
     init() {
         // 底部 TabBar / 导航栏不透明背景（修复 iOS 15 半透明导致的"全透明"观感）
@@ -48,8 +49,38 @@ struct FmHuangguoApp: App {
                 .environmentObject(lib)
                 .environmentObject(gesturePrefs)
                 .environmentObject(cacheManager)
-                .preferredColorScheme(.light)
+                .environmentObject(theme)
+                .preferredColorScheme(theme.scheme.colorScheme)
         }
+    }
+}
+
+// MARK: - 配色偏好
+
+enum ThemeMode: String, CaseIterable, Identifiable {
+    case system = "跟随系统"
+    case light = "浅色"
+    case dark = "深色"
+
+    var id: String { rawValue }
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
+final class ThemePrefs: ObservableObject {
+    static let shared = ThemePrefs()
+
+    @Published var mode: ThemeMode {
+        didSet { UserDefaults.standard.set(mode.rawValue, forKey: "theme_mode") }
+    }
+
+    private init() {
+        mode = ThemeMode(rawValue: UserDefaults.standard.string(forKey: "theme_mode") ?? "") ?? .system
     }
 }
 

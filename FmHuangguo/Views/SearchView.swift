@@ -78,7 +78,7 @@ struct SearchView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(Color(white: 0.94))
+            .background(Color(.secondarySystemBackground))
             .cornerRadius(18)
 
             Button {
@@ -191,7 +191,7 @@ struct FlowChips: View {
                         .font(.system(size: 12))
                         .lineLimit(1)
                         .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(Color(white: 0.94))
+                        .background(Color(.secondarySystemBackground))
                         .foregroundColor(.primary)
                         .cornerRadius(14)
                 }

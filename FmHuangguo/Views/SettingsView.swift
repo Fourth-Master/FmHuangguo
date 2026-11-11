@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var gesturePrefs: GesturePrefs
     @EnvironmentObject private var cache: VideoCacheManager
+    @EnvironmentObject private var theme: ThemePrefs
     @State private var cacheCleared = false
     @State private var logCleared = false
     @State private var showLogViewer = false
@@ -13,6 +14,18 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section(header: Text("外观")) {
+                Picker("配色模式", selection: Binding(
+                    get: { theme.mode },
+                    set: { theme.mode = $0 }
+                )) {
+                    ForEach(ThemeMode.allCases) { m in
+                        Text(m.rawValue).tag(m)
+                    }
+                }
+                .font(.system(size: 14))
+            }
+
             Section(header: Text("播放器手势自定义")) {
                 gesturePicker(title: "双击画面", slot: "gesture_double_tap",
                               binding: Binding(get: { gesturePrefs.doubleTap },

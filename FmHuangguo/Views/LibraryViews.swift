@@ -128,7 +128,7 @@ struct HistoryView: View {
                     .foregroundColor(.secondary)
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color(white: 0.92))
+                        Capsule().fill(Color(.secondarySystemBackground))
                         Capsule()
                             .fill(Color.accentColor)
                             .frame(width: geo.size.width * progressFraction(rec))

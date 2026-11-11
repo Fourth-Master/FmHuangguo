@@ -4,3 +4,5 @@ DerivedData/
 xcuserdata/
 .DS_Store
 *.ipa
+Pods/
+*.xcworkspace

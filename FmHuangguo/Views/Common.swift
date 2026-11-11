@@ -49,7 +49,7 @@ struct ErrorRetryView: View {
                         Text(title)
                             .font(.subheadline).fontWeight(.medium)
                             .padding(.horizontal, 20).padding(.vertical, 8)
-                            .background(Color(white: 0.92))
+                            .background(Color(.secondarySystemBackground))
                             .foregroundColor(.primary)
                             .cornerRadius(18)
                     }

@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,11 +30,16 @@ jobs:
           xcodegen generate
           ls -la
 
+      - name: Install CocoaPods dependencies (MobileVLCKit/FFmpeg)
+        run: |
+          pod install --repo-update
+          ls -la
+
       - name: Build (unsigned, arm64)
         run: |
           set -o pipefail
           mkdir -p build
-          xcodebuild -project FmHuangguo.xcodeproj \
+          xcodebuild -workspace FmHuangguo.xcworkspace \
             -scheme FmHuangguo \
             -configuration Release \
             -destination 'generic/platform=iOS' \
@@ -51,14 +56,14 @@ jobs:
           mkdir -p build/Payload
           cp -R "$APP" build/Payload/
           cd build
-          zip -qry FmHuangguo-1.1.2.ipa Payload
-          ls -lh FmHuangguo-1.1.2.ipa
+          zip -qry FmHuangguo-1.2.0.ipa Payload
+          ls -lh FmHuangguo-1.2.0.ipa
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: FmHuangguo-ipa
-          path: build/FmHuangguo-1.1.2.ipa
+          path: build/FmHuangguo-1.2.0.ipa
           if-no-files-found: error
 
       - name: Publish to Release (latest)
@@ -66,23 +71,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat > /tmp/notes-src.md <<'NOTES'
-          Fm黄果 iOS 短剧播放器 v1.1.2（未签名 ipa，需自行签名安装）
+          Fm黄果 iOS 短剧播放器 v1.2.0（未签名 ipa，需自行签名安装）
 
-          - 三条线路 + 最新地址自动测速，自动选择最快线路进入
-          - 原生直连 API，自动跳过 18+ 确认
-          - 分类浏览 / 关键词搜索
-          - 内置播放器：倍速、选集、亮度音量手势、横竖屏
-          - 播放进度记忆、历史播放记录、收藏
+          - 播放内核更换为 FFmpeg（MobileVLCKit）：高倍速不再横跳，seek 更快
+          - 深浅配色模式（跟随系统/浅色/深色）
+          - 热门标签直达标签页内容
+          - 长按上下滑调倍速（0.5x~3x）、双击暂停、进度条点击跳转
+          - 播放器手势自定义、视频离线缓存、每日更新检测
           - 支持 iOS 15.4+
 
           安装方式：使用 Sideloadly / AltStore / 爱思助手 等工具对 ipa 自签安装。
           NOTES
           sed 's/^  //' /tmp/notes-src.md > /tmp/release-notes.md
           if gh release view latest >/dev/null 2>&1; then
-            gh release upload latest build/FmHuangguo-1.1.2.ipa --clobber
+            gh release upload latest build/FmHuangguo-1.2.0.ipa --clobber
           else
-            gh release create latest build/FmHuangguo-1.1.2.ipa \
-              --title "Fm黄果 v1.1.2" \
+            gh release create latest build/FmHuangguo-1.2.0.ipa \
+              --title "Fm黄果 v1.2.0" \
               --notes-file /tmp/release-notes.md \
               --latest
           fi

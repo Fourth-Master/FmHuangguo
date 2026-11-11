@@ -215,7 +215,7 @@ struct NetImage: View {
 
     var body: some View {
         ZStack {
-            Rectangle().fill(Color(white: 0.93))
+            Rectangle().fill(Color(.secondarySystemBackground))
             if let image = image {
                 Image(uiImage: image)
                     .resizable()

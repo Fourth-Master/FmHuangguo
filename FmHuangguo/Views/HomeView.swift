@@ -246,7 +246,7 @@ struct HomeView: View {
                             Text(c.name)
                                 .font(.system(size: 13, weight: model.category == c.id ? .semibold : .regular))
                                 .padding(.horizontal, 13).padding(.vertical, 6)
-                                .background(model.category == c.id ? Color.accentColor : Color(white: 0.94))
+                                .background(model.category == c.id ? Color.accentColor : Color(.secondarySystemBackground))
                                 .foregroundColor(model.category == c.id ? .white : .primary)
                                 .cornerRadius(15)
                         }
