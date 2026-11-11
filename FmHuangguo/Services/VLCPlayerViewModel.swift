@@ -29,6 +29,8 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
     /// 最近一次加载的播放地址与 CDN 头（供缓存下载复用）
     @Published var lastLoadedURL: String = ""
     @Published var lastCdnHeaders: [String: String] = [:]
+    /// VLC 无音量读接口，自记录（0~1）
+    private var audioVolumeStored: Float = 1.0
 
     private var timeTimer: Timer?
     private var lastSaveAt = Date.distantPast
@@ -181,16 +183,15 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
 
     // MARK: 播放控制
 
-    /// 音量 0~1（VLC volume 属性 0~256；VLC 无读接口，自记录）
-    private var storedVolume: Float = 1.0
-
+    /// 音量 0~1（VLC：player.audio.volume 0~256，VLCAudio.volume）
     func setVolume(_ normalized: Float) {
-        storedVolume = max(0, min(1, normalized))
-        player.volume = Int32(storedVolume * 256.0)
+        let v = max(0, min(1, normalized))
+        audioVolumeStored = v
+        player.audio.volume = Int(v * 256.0)
     }
 
     func currentVolume() -> Float {
-        storedVolume
+        audioVolumeStored
     }
 
     func togglePlay() {
