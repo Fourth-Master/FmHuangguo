@@ -460,12 +460,11 @@ struct PlayerScreen: View {
 
     // MARK: 手势
 
-    /// 长按：按偏好执行（默认临时 2x；上下滑按偏好执行，默认调倍速）
     /// 长按：临时应用设置的倍速（默认 2x，松开恢复）
     private var longPressGesture: some Gesture {
         LongPressGesture(minimumDuration: 0.5)
             .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
-            .updating() { value, state, _ in
+            .updating($longPressActive) { value, state, _ in
                 if case .second(true, _) = value {
                     state = true
                 }
@@ -476,7 +475,7 @@ struct PlayerScreen: View {
                         longPressEngaged = true
                         speedBeforeLongPress = vm.speed
                         vm.setSpeed(Float(speedPrefs.longPressSpeed))
-                        hudText = String(format: ":.2f%%@", speedPrefs.longPressSpeed, " 倍速播放中")
+                        hudText = String(format: "%.2f", speedPrefs.longPressSpeed) + " 倍速播放中"
                         hudProgress = nil
                         hudVisible = true
                         haptic(.medium)
