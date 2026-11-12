@@ -49,7 +49,8 @@ jobs:
 
       - name: Print compile errors on failure
         if: failure()
-        run: grep -E "\.swift:[0-9]+:[0-9]+: error:" build/xcodebuild.log | head -n 20 || true
+        run: |
+          grep -E "\.swift:[0-9]+:[0-9]+: error:" build/xcodebuild.log | head -n 20 || true
 
       - name: Upload full build log on failure
         if: failure()
