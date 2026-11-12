@@ -30,7 +30,9 @@ jobs:
           xcodegen generate
           ls -la
 
-
+      - name: Resolve Swift Package dependencies (MPVKit/libmpv)
+        run: |
+          xcodebuild -resolvePackageDependencies -project FmHuangguo.xcodeproj -scheme FmHuangguo
 
       - name: Build (unsigned, arm64)
         run: |
