@@ -103,7 +103,9 @@ struct PlayerScreen: View {
             }
         }
         .onDisappear {
-            // 保险：退出播放器时若倍速还挂着，强制恢复
+            DebugLogger.shared.log("onDisappear: 停止播放")
+            // 退出播放器必须停止 VLC（否则音频会话残留，返回后仍在后台播放）
+            vm.stopPlayback()
             if longPressEngaged {
                 longPressEngaged = false
                 vm.setSpeed(speedBeforeLongPress)
@@ -130,7 +132,8 @@ struct PlayerScreen: View {
             PlayerLayerView(player: vm.player, fillMode: fillMode)
                 .allowsHitTesting(false)
 
-            if vm.buffering && vm.error == nil {
+            // 加载转圈：仅初始加载/切集时显示（播放中途 re-buffer 不打扰）
+            if vm.buffering && !vm.everPlayed && vm.error == nil {
                 ProgressView().tint(.white).scaleEffect(1.4)
             }
 

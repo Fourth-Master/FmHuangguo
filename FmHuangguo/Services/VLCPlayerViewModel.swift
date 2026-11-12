@@ -24,6 +24,8 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
     @Published var speed: Float = 1.0
     @Published var error: String?
     @Published var controlsVisible = true
+    /// 本集是否已实际开始播放过（控制初始加载转圈的显示）
+    @Published var everPlayed = false
     /// 最近一次加载的播放地址与 CDN 头（供缓存下载复用）
     @Published var lastLoadedURL: String = ""
     @Published var lastCdnHeaders: [String: String] = [:]
@@ -48,7 +50,11 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
         // 显式初始化 VLC 库（保证 libvlc_new 在主线程、早于 player 创建）
         _ = VLCLibrary.shared()
         DebugLogger.shared.log("VM init: VLCLibrary OK")
-        player = VLCMediaPlayer(options: ["--network-caching=2500"])
+        player = VLCMediaPlayer(options: [
+            "--network-caching=5000",       // 5s 网络缓冲，减少播放中频繁 re-buffer
+            "--no-drop-late-frames",
+            "--no-skip-frames",
+        ])
         DebugLogger.shared.log("VM init: VLCMediaPlayer OK")
         player.delegate = self
         DebugLogger.shared.log("VM init: delegate OK")
@@ -71,8 +77,8 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
 
     // MARK: VLC 状态回调
 
-    func mediaPlayerTimeChanged(_ aMediaTime: VLCTime, slide: Float) {
-        DispatchQueue.main.async { self.tick() }
+    func mediaPlayerTimeChanged(_ aNotification: Notification) {
+        // VLC 3.x delegate 传 Notification；时间更新由 0.5s Timer tick 覆盖
     }
 
     func mediaPlayerStateChanged(_ aNotification: Notification) {
@@ -80,6 +86,7 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
             let st = self.player.state
             self.playing = (st == .playing)
             self.buffering = (st == .buffering || st == .opening)
+            if st == .playing { self.everPlayed = true }
             switch st {
             case .ended:
                 self.playFinished()
@@ -109,6 +116,7 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
         current = resume ?? 0
         duration = Double(ep.duration)
         pendingResume = resume
+        everPlayed = false
         DebugLogger.shared.log("load 开始 ep=\(ep.epNum) videoId=\(ep.videoId)")
 
         do {
@@ -230,6 +238,12 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
     }
 
     // MARK: 进度保存
+
+    /// 退出播放器：停止播放（否则 VLC 音频会话残留，返回后仍在后台播放）
+    func stopPlayback() {
+        player.stop()
+        DebugLogger.shared.log("stopPlayback ep=\(episode.epNum)")
+    }
 
     func saveProgress(reset: Bool = false) {
         guard duration > 0 else { return }
