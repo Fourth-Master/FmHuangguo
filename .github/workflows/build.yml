@@ -56,12 +56,16 @@ jobs:
           # 巨魔/TrollStore 要求 app 至少有伪签名（_CodeSignature），
           # 完全未签名的 app 解析报 302 "Unable to locate Info.plist"
           brew install ldid
-          # 主二进制 + VLC 动态库全部伪签名
+          # 1) 主二进制伪签名（ldid -S 生成 _CodeSignature/CodeResources）
           ldid -S "$APP/FmHuangguo"
-          find "$APP/Frameworks" -name "*.framework" -type d | while read -r fw; do
-            ldid -S "$(dirname "$(find "$fw" -maxdepth 1 -type f -perm +111 | head -n 1)")" 2>/dev/null || \
-              ldid -S "$fw/$(basename "$fw" .framework)"
+          # 2) 所有嵌入 framework 伪签名
+          find "$APP/Frameworks" -maxdepth 1 -name "*.framework" | while read -r fw; do
+            BIN="$fw/$(basename "$fw" .framework)"
+            [ -f "$BIN" ] && ldid -S "$BIN"
           done
+          # 3) 校验主 app 签名目录存在
+          test -d "$APP/_CodeSignature" && echo "main app _CodeSignature OK"
+          ls -la "$APP"
           mkdir -p build/Payload
           cp -R "$APP" build/Payload/
           cd build
