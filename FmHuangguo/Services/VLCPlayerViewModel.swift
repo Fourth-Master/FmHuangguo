@@ -11,7 +11,9 @@ import MobileVLCKit
 // - VLC 原生处理 AES-128 HLS、HTTP 头注入更直接
 
 final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate {
-    let player: VLCMediaPlayer
+    /// VLCMediaPlayer 在 super.init() 后创建（Swift 初始化顺序要求 let 属性
+    /// 先于 super.init 赋值，但 VLC 创建需要日志夹在中间，故用 var 一次性赋值）
+    private(set) var player: VLCMediaPlayer!
     let detail: DramaDetail
 
     @Published var episode: Episode
