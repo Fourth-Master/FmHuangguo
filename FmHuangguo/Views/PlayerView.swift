@@ -569,7 +569,7 @@ struct PlayerScreen: View {
                     hudText = "亮度 \(Int(b * 100))%"
                     hudProgress = b
                 case .volume:
-                    let delta = -v.translation.height / 320
+                    let delta = Float(-v.translation.height / 320)
                     let vol = min(1, max(0, dragStartVolume + delta))
                     vm.setVolume(vol)
                     hudText = "音量 \(Int(vol * 100))%"
