@@ -474,8 +474,8 @@ struct PlayerScreen: View {
                     if !longPressEngaged {
                         longPressEngaged = true
                         speedBeforeLongPress = vm.speed
-                        vm.setSpeed(Float(speedPrefs.longPressSpeed))
-                        hudText = String(format: "%.2f", speedPrefs.longPressSpeed) + " 倍速播放中"
+                        vm.setSpeed(Float(prefs.longPressSpeed))
+                        hudText = String(format: "%.2f", prefs.longPressSpeed) + " 倍速播放中"
                         hudProgress = nil
                         hudVisible = true
                         haptic(.medium)
