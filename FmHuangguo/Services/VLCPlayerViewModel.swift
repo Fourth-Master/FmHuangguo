@@ -187,7 +187,7 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
     func setVolume(_ normalized: Float) {
         let v = max(0, min(1, normalized))
         audioVolumeStored = v
-        player.audio?.volume = Int(v * 256.0)
+        player.audio?.volume = Int32(v * 256.0)
     }
 
     func currentVolume() -> Float {
