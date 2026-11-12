@@ -11,11 +11,7 @@ import MobileVLCKit
 // - VLC 原生处理 AES-128 HLS、HTTP 头注入更直接
 
 final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate {
-    let player = VLCMediaPlayer(options: [
-        "--network-caching=3000",       // 3s 网络缓冲
-        "--http-reconnect=true",
-        "--avcodec-hw=videotoolbox",    // 硬解
-    ])
+    let player: VLCMediaPlayer
     let detail: DramaDetail
 
     @Published var episode: Episode
@@ -46,15 +42,24 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
             ?? Episode(epNum: 1, videoId: "", title: "第1集", duration: 0)
         self.episode = ep
         super.init()
+        DebugLogger.shared.log("VM init: 开始创建 VLC 内核")
+        // 显式初始化 VLC 库（保证 libvlc_new 在主线程、早于 player 创建）
+        _ = VLCLibrary.shared()
+        DebugLogger.shared.log("VM init: VLCLibrary OK")
+        player = VLCMediaPlayer(options: ["--network-caching=2500"])
+        DebugLogger.shared.log("VM init: VLCMediaPlayer OK")
         player.delegate = self
+        DebugLogger.shared.log("VM init: delegate OK")
 
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
+        DebugLogger.shared.log("VM init: audio session OK")
 
         // 0.5s 轮询进度（VLC 没有 AVPlayer 的 periodic observer）
         timeTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             DispatchQueue.main.async { self?.tick() }
         }
+        DebugLogger.shared.log("VM init: 完成")
     }
 
     deinit {
@@ -102,6 +107,7 @@ final class VLCPlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelega
         current = resume ?? 0
         duration = Double(ep.duration)
         pendingResume = resume
+        DebugLogger.shared.log("load 开始 ep=\(ep.epNum) videoId=\(ep.videoId)")
 
         do {
             let urlStr: String
@@ -268,7 +274,9 @@ struct VLCPlayerLayerView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> VLCPlayerContainerView {
         let v = VLCPlayerContainerView()
+        DebugLogger.shared.log("makeUIView: 挂载 drawable")
         vm.player.drawable = v
+        DebugLogger.shared.log("makeUIView: drawable OK")
         v.mediaPlayer = vm.player
         return v
     }

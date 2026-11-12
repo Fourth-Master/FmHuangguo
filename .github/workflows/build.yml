@@ -75,14 +75,14 @@ jobs:
           mkdir -p build/Payload
           cp -R "$APP" build/Payload/
           cd build
-          zip -qry FmHuangguo-1.2.1.ipa Payload
-          ls -lh FmHuangguo-1.2.1.ipa
+          zip -qry FmHuangguo-1.2.2.ipa Payload
+          ls -lh FmHuangguo-1.2.2.ipa
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: FmHuangguo-ipa
-          path: build/FmHuangguo-1.2.1.ipa
+          path: build/FmHuangguo-1.2.2.ipa
           if-no-files-found: error
 
       - name: Publish to Release (latest)
@@ -90,7 +90,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat > /tmp/notes-src.md <<'NOTES'
-          Fm黄果 iOS 短剧播放器 v1.2.1（伪签名 ipa，需自行签名安装）
+          Fm黄果 iOS 短剧播放器 v1.2.2（伪签名 ipa，需自行签名安装）
 
           - 播放内核更换为 FFmpeg（MobileVLCKit）：高倍速不再横跳，seek 更快
           - 深浅配色模式（跟随系统/浅色/深色）
@@ -103,10 +103,10 @@ jobs:
           NOTES
           sed 's/^  //' /tmp/notes-src.md > /tmp/release-notes.md
           if gh release view latest >/dev/null 2>&1; then
-            gh release upload latest build/FmHuangguo-1.2.1.ipa --clobber
+            gh release upload latest build/FmHuangguo-1.2.2.ipa --clobber
           else
-            gh release create latest build/FmHuangguo-1.2.1.ipa \
-              --title "Fm黄果 v1.2.1" \
+            gh release create latest build/FmHuangguo-1.2.2.ipa \
+              --title "Fm黄果 v1.2.2" \
               --notes-file /tmp/release-notes.md \
               --latest
           fi

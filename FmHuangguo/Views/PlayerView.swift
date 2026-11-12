@@ -76,7 +76,9 @@ struct PlayerScreen: View {
     init(detail: DramaDetail, startEp: Int) {
         self.detail = detail
         self.startEp = startEp
+        DebugLogger.shared.log("PlayerScreen init ep=\(startEp)")
         _vm = StateObject(wrappedValue: PlayerViewModel(detail: detail, epNum: startEp))
+        DebugLogger.shared.log("PlayerScreen init 完成 ep=\(startEp)")
     }
 
     var body: some View {
@@ -87,11 +89,13 @@ struct PlayerScreen: View {
         .background(Color.black.ignoresSafeArea())
         .statusBar(hidden: true)
         .onAppear {
+            DebugLogger.shared.log("onAppear 开始")
             AppDelegate.orientationLock = .allButUpsideDown
             UIViewController.attemptRotationToDeviceOrientation()
             UIApplication.shared.isIdleTimerDisabled = true
             let resume = lib.progress(dramaId: detail.id)
             Task {
+                DebugLogger.shared.log("onAppear: 准备 load ep=\(startEp)")
                 if let ep = detail.episodeList.first(where: { $0.epNum == startEp }) ?? detail.episodeList.first {
                     let pos = (resume?.epNum == ep.epNum) ? resume?.position : nil
                     await vm.load(ep: ep, resume: (pos ?? 0) > 10 ? pos : nil)
