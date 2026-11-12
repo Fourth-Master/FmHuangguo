@@ -56,14 +56,14 @@ jobs:
           # 巨魔/TrollStore 要求 app 至少有伪签名（_CodeSignature），
           # 完全未签名的 app 解析报 302 "Unable to locate Info.plist"
           brew install ldid
-          # 1) 主二进制伪签名（ldid -S 生成 _CodeSignature/CodeResources）
           which ldid
-          ldid -S "$APP/FmHuangguo" && echo "sign main OK"
-          # 2) 所有嵌入 framework 伪签名
+          # 1) 嵌入 framework 的二进制逐个伪签名（ldid -S 只嵌签名，无 CodeResources）
           find "$APP/Frameworks" -maxdepth 1 -name "*.framework" | while read -r fw; do
             BIN="$fw/$(basename "$fw" .framework)"
-            [ -f "$BIN" ] && ldid -S "$BIN" && echo "sign $(basename "$fw") OK"
+            [ -f "$BIN" ] && ldid -S "$BIN" && echo "sign bin $(basename "$fw") OK"
           done
+          # 2) 以 bundle 模式签整个 .app：生成主二进制签名 + _CodeSignature/CodeResources
+          ldid -S "$APP" && echo "sign bundle OK"
           # 3) 校验主 app 签名目录存在（不存在则直接失败）
           if [ -d "$APP/_CodeSignature" ]; then
             echo "main app _CodeSignature OK"
