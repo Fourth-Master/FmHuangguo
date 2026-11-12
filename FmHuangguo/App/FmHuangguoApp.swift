@@ -19,7 +19,7 @@ struct FmHuangguoApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var app = AppState()
     @StateObject private var lib = LibraryStore.shared
-    @StateObject private var gesturePrefs = GesturePrefs.shared
+    @StateObject private var speedPrefs = SpeedPrefs.shared
     @StateObject private var cacheManager = VideoCacheManager.shared
     @StateObject private var theme = ThemePrefs.shared
 
@@ -47,7 +47,7 @@ struct FmHuangguoApp: App {
             RootView()
                 .environmentObject(app)
                 .environmentObject(lib)
-                .environmentObject(gesturePrefs)
+                .environmentObject(speedPrefs)
                 .environmentObject(cacheManager)
                 .environmentObject(theme)
                 .preferredColorScheme(theme.mode.colorScheme)

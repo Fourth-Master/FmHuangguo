@@ -2,32 +2,29 @@ import SwiftUI
 import AVFoundation
 import UIKit
 import Combine
-import MobileVLCKit
+import Libmpv
 
 // MARK: - 播放器视图模型（FFmpeg/VLC 内核，见 VLCPlayerViewModel.swift）
 //
 // PlayerViewModel 保留为 VLCPlayerViewModel 的类型别名，控制层代码全部通用：
 // current/duration/playing/buffering/speed/error、seek/setSpeed/load 语义一致。
 
-typealias PlayerViewModel = VLCPlayerViewModel
+typealias PlayerViewModel = MPVPlayerViewModel
 
-// MARK: - VLC 视频输出容器（FFmpeg 内核渲染）
-//
-// VLC 默认按视频比例完整显示（fit）；fill 模式通过放大 drawable 内部渲染实现。
-// 为避免 MobileVLCKit 属性 API 差异，此处不直接操作 crop/scale 属性。
+// MARK: - mpv 视频输出容器（FFmpeg 内核渲染：CAMetalLayer 经 wid 交给 mpv）
 
 struct PlayerLayerView: UIViewRepresentable {
-    let player: VLCMediaPlayer
-    let fillMode: Bool
+    let vm: PlayerViewModel
 
-    func makeUIView(context: Context) -> UIView {
-        let v = UIView()
-        player.drawable = v
-        v.backgroundColor = .black
+    func makeUIView(context: Context) -> MPVMetalContainerView {
+        let v = MPVMetalContainerView()
+        v.onLayerReady = { layer in
+            vm.attachMetalLayer(layer)
+        }
         return v
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ uiView: MPVMetalContainerView, context: Context) {}
 }
 
 // MARK: - 播放器整屏
@@ -37,7 +34,7 @@ struct PlayerScreen: View {
     let startEp: Int
 
     @EnvironmentObject private var lib: LibraryStore
-    @EnvironmentObject private var prefs: GesturePrefs
+    @EnvironmentObject private var prefs: SpeedPrefs
     @EnvironmentObject private var cacheManager: VideoCacheManager
     @Environment(\.dismiss) private var dismiss
     @StateObject private var vm: PlayerViewModel
@@ -48,29 +45,16 @@ struct PlayerScreen: View {
     @State private var showEpisodeSheet = false
     @State private var hideTask: Task<Void, Never>?
 
-    // 手势状态
-    @State private var dragMode: DragMode = .none
-    @State private var dragStartVolume: Float = 0
-    @State private var dragStartBrightness: CGFloat = 0
-    @State private var dragStartTime: Double = 0
     @State private var scrubValue: Double = 0
     @State private var scrubbing = false
     @State private var hudText = ""
     @State private var hudVisible = false
 
-    enum DragMode: Equatable {
-        case none, brightness, volume, seek
-        /// 长按已激活（倍速会话）：本次触摸屏蔽亮度/音量/快进分类
-        case lockedByLongPress
-    }
-
     // 长按倍速（@GestureState 保证任何结束路径都会回滚速度）
     @GestureState private var longPressActive: Bool = false
     @State private var speedBeforeLongPress: Float = 1.0
     @State private var longPressEngaged = false
-    /// 长按后上下滑微调倍速（0.5x~3x 步进 0.25）
-    @State private var lpDragBaseSpeed: Float = 1.0
-    /// HUD 进度条数值（0~1，nil 隐藏），用于亮度/音量/快进
+    /// HUD 进度条数值（0~1，nil 隐藏）
     @State private var hudProgress: Double?
 
     init(detail: DramaDetail, startEp: Int) {
@@ -129,7 +113,7 @@ struct PlayerScreen: View {
     private func playerArea(width: CGFloat, height: CGFloat, landscape: Bool) -> some View {
         ZStack {
             Color.black
-            PlayerLayerView(player: vm.player, fillMode: fillMode)
+            PlayerLayerView(vm: vm)
                 .allowsHitTesting(false)
 
             // 加载转圈：仅初始加载/切集时显示（播放中途 re-buffer 不打扰）
@@ -171,21 +155,19 @@ struct PlayerScreen: View {
         .frame(height: landscape ? nil : height)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
-        .simultaneousGesture(gestureLayer(width: width))
+        .simultaneousGesture(gestureLayer())
     }
 
-    // MARK: 手势层
+    // MARK: 手势（已按需求精简：仅保留 单击呼出控制/双击暂停/长按倍速）
     //
-    // 挂在整个播放区最外层（.simultaneousGesture），不放在 ZStack 子视图里。
-    // simultaneous 不会阻断 Button 的点击：Button 正常响应，空白区域则由这组
-    // 手势处理单击/双击/长按/拖动。之前放在 ZStack 中间层时，与上层 Button
-    // 存在 tap 竞态，导致右下角横屏/选集按钮偶尔无效。
-    private func gestureLayer(width: CGFloat) -> some Gesture {
+    // 挂在整个播放区最外层（.simultaneousGesture），不占 hit-test 层级，
+    // 控制层 Button 命中时系统直接交给 Button。
+    private func gestureLayer() -> some Gesture {
         SimultaneousGesture(
             TapGesture(count: 2).onEnded { handleDoubleTap() },
             SimultaneousGesture(
                 TapGesture().onEnded { flashControls() },
-                SimultaneousGesture(longPressGesture, dragGesture(width: width))
+                longPressGesture
             )
         )
     }
@@ -224,6 +206,7 @@ struct PlayerScreen: View {
                     .allowsHitTesting(false)
             )
             .opacity(showControls ? 1 : 0)
+            .allowsHitTesting(showControls)
 
             Spacer()
 
@@ -269,6 +252,7 @@ struct PlayerScreen: View {
                 .disabled(vm.nextEpisode == nil)
             }
             .opacity(showControls && vm.error == nil ? 1 : 0)
+            .allowsHitTesting(showControls && vm.error == nil)
             .padding(.bottom, 6)
 
             // 底部
@@ -352,6 +336,7 @@ struct PlayerScreen: View {
                     .allowsHitTesting(false)
             )
             .opacity(showControls ? 1 : 0)
+            .allowsHitTesting(showControls)
         }
         .animation(.easeInOut(duration: 0.2), value: showControls)
     }
@@ -476,84 +461,42 @@ struct PlayerScreen: View {
     // MARK: 手势
 
     /// 长按：按偏好执行（默认临时 2x；上下滑按偏好执行，默认调倍速）
+    /// 长按：临时应用设置的倍速（默认 2x，松开恢复）
     private var longPressGesture: some Gesture {
         LongPressGesture(minimumDuration: 0.5)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
-            .updating($longPressActive) { value, state, _ in
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+            .updating() { value, state, _ in
                 if case .second(true, _) = value {
                     state = true
                 }
             }
             .onChanged { value in
-                if case .second(true, let drag) = value {
+                if case .second(true, _) = value {
                     if !longPressEngaged {
                         longPressEngaged = true
                         speedBeforeLongPress = vm.speed
-                        // 长按激活：取消本次触摸可能已进入的亮度/音量/快进模式
-                        // （把系统亮度/音量不动，仅放弃本次 drag 会话，HUD 交给倍速）
-                        dragMode = .lockedByLongPress
-                        scrubbing = false
-                        switch prefs.longPress {
-                        case .speedUpLongPress:
-                            vm.setSpeed(2.0)
-                            // 上下滑以激活后的速度（2x）为基准继续微调
-                            lpDragBaseSpeed = 2.0
-                            hudText = "2x 倍速播放中"
-                            hudProgress = nil
-                        case .togglePlay:
-                            vm.togglePlay()
-                            lpDragBaseSpeed = vm.speed
-                        case .fillToggle:
-                            fillMode.toggle()
-                            lpDragBaseSpeed = vm.speed
-                        case .speedDrag, .none:
-                            // 纯上下滑调倍速：从当前速起步
-                            lpDragBaseSpeed = vm.speed
-                            hudText = "上下滑动调节倍速"
-                            hudProgress = nil
-                        }
+                        vm.setSpeed(Float(speedPrefs.longPressSpeed))
+                        hudText = String(format: ":.2f%%@", speedPrefs.longPressSpeed, " 倍速播放中")
+                        hudProgress = nil
                         hudVisible = true
                         haptic(.medium)
-                    } else if prefs.longPress == .speedDrag || prefs.longPressVerticalDrag == .speedDrag {
-                        // 长按后上下滑：每 45pt 调 0.25x（上增下减，0.5x~3x）
-                        let dy = drag?.translation.height ?? 0
-                        let steps = Int(-dy / 45)
-                        let target = max(0.5, min(3.0, lpDragBaseSpeed + Float(steps) * 0.25))
-                        if abs(target - vm.speed) >= 0.001 {
-                            vm.setSpeed(target)
-                            hudText = "倍速 \(speedLabel(target))"
-                            hudProgress = Double((target - 0.5) / 2.5)
-                        }
                     }
                 }
             }
             .onEnded { _ in
                 if longPressEngaged {
                     longPressEngaged = false
-                    if prefs.longPress == .speedUpLongPress {
-                        vm.setSpeed(speedBeforeLongPress)
-                    }
+                    vm.setSpeed(speedBeforeLongPress)
                     hudVisible = false
                 }
             }
     }
 
-    /// 双击：按偏好执行
+
+    /// 双击：暂停/播放
     private func handleDoubleTap() {
-        switch prefs.doubleTap {
-        case .togglePlay:
-            vm.togglePlay()
-            flashControls()
-        case .fillToggle:
-            fillMode.toggle()
-        case .speedUpLongPress:
-            vm.setSpeed(vm.speed >= 2.0 ? 1.0 : 2.0)
-            hudText = "倍速 \(speedLabel(vm.speed))"
-            hudVisible = true
-            hideHudAfterDelay()
-        case .speedDrag, .none:
-            break
-        }
+        vm.togglePlay()
+        flashControls()
     }
 
     private func hideHudAfterDelay() {
@@ -563,74 +506,7 @@ struct PlayerScreen: View {
         }
     }
 
-    private func dragGesture(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 14)
-            .onChanged { v in
-                if dragMode == .none {
-                    // 长按倍速会话进行中：本次触摸锁定，不再进入亮度/音量/快进
-                    if longPressEngaged {
-                        dragMode = .lockedByLongPress
-                        return
-                    }
-                    let vertical = abs(v.translation.height) > abs(v.translation.width)
-                    if vertical {
-                        if v.startLocation.x < width / 2 {
-                            dragMode = .brightness
-                            dragStartBrightness = UIScreen.main.brightness
-                        } else {
-                            dragMode = .volume
-                            // VLC 无音量读接口，用 VM 自记录值（0~1）
-                            dragStartVolume = vm.currentVolume()
-                        }
-                    } else {
-                        dragMode = .seek
-                        dragStartTime = vm.current
-                    }
-                }
-                // 长按锁定期间完全让给倍速手势（倍速 HUD 由 longPressGesture 自己更新）
-                guard dragMode != .lockedByLongPress else { return }
-                switch dragMode {
-                case .brightness:
-                    let delta = -v.translation.height / 320
-                    let b = min(1, max(0.01, dragStartBrightness + delta))
-                    UIScreen.main.brightness = b
-                    hudText = "亮度 \(Int(b * 100))%"
-                    hudProgress = b
-                case .volume:
-                    let delta = Float(-v.translation.height / 320)
-                    let vol = min(1, max(0, dragStartVolume + delta))
-                    vm.setVolume(vol)
-                    hudText = "音量 \(Int(vol * 100))%"
-                    hudProgress = Double(vol)
-                case .seek:
-                    let delta = Double(v.translation.width) / Double(max(width, 1)) * 120
-                    let target = max(0, min(vm.duration, dragStartTime + delta))
-                    hudText = "\(fmtTime(target)) / \(fmtTime(vm.duration))"
-                    hudProgress = vm.duration > 0 ? target / vm.duration : nil
-                    scrubValue = target
-                    scrubbing = true
-                case .none, .lockedByLongPress:
-                    break
-                }
-                if dragMode != .none {
-                    hudVisible = true
-                }
-            }
-            .onEnded { _ in
-                // 锁定态（长按倍速会话）绝不执行 seek——否则上下滑调倍速会被当成快进跳播
-                if dragMode == .seek, !longPressEngaged {
-                    let target = scrubValue
-                    Task { await vm.seek(to: target) }
-                }
-                dragMode = .none
-                hudVisible = false
-                hudProgress = nil
-                // 手势结束后立刻退出 scrub 状态，恢复跟随播放器实时时间
-                scrubbing = false
-            }
-    }
-
-    // MARK: 工具
+// MARK: 工具
 
     private func flashControls() {
         withAnimation { showControls = true }

@@ -4,13 +4,15 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var app: AppState
-    @EnvironmentObject private var gesturePrefs: GesturePrefs
+    @EnvironmentObject private var speedPrefs: SpeedPrefs
     @EnvironmentObject private var cache: VideoCacheManager
     @EnvironmentObject private var theme: ThemePrefs
     @State private var cacheCleared = false
     @State private var logCleared = false
     @State private var showLogViewer = false
     @State private var shareSheetActive = false
+    @State private var showSpeedEditor = false
+    @State private var speedInput = ""
 
     var body: some View {
         Form {
@@ -26,22 +28,36 @@ struct SettingsView: View {
                 .font(.system(size: 14))
             }
 
-            Section(header: Text("播放器手势自定义")) {
-                gesturePicker(title: "双击画面", slot: "gesture_double_tap",
-                              binding: Binding(get: { gesturePrefs.doubleTap },
-                                               set: { gesturePrefs.set($0, for: "gesture_double_tap") }))
-                gesturePicker(title: "长按画面", slot: "gesture_long_press",
-                              binding: Binding(get: { gesturePrefs.longPress },
-                                               set: { gesturePrefs.set($0, for: "gesture_long_press") }))
-                gesturePicker(title: "长按后上下滑动", slot: "gesture_lp_drag",
-                              binding: Binding(get: { gesturePrefs.longPressVerticalDrag },
-                                               set: { gesturePrefs.set($0, for: "gesture_lp_drag") }))
-                Button {
-                    gesturePrefs.reset()
-                } label: {
-                    Text("恢复默认手势")
-                        .font(.system(size: 14))
+            Section(header: Text("长按倍速调整"), footer: Text("长按画面时临时应用该倍速，松开恢复原速。范围 0.5x~5.0x。")) {
+                HStack(spacing: 16) {
+                    Button {
+                        speedPrefs.adjust(-0.25)
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.system(size: 26))
+                            .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                    // 点击数字可直接编辑
+                    Text(String(format: "%.2fx", speedPrefs.longPressSpeed))
+                        .font(.system(size: 22, weight: .bold, design: .monospaced))
+                        .foregroundColor(.accentColor)
+                        .onTapGesture {
+                            speedInput = String(format: "%.2f", speedPrefs.longPressSpeed)
+                            showSpeedEditor = true
+                        }
+                    Spacer()
+                    Button {
+                        speedPrefs.adjust(0.25)
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 26))
+                            .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.plain)
                 }
+                .padding(.vertical, 4)
             }
 
             Section(header: Text("离线缓存")) {
@@ -163,6 +179,18 @@ struct SettingsView: View {
         .sheet(isPresented: $shareSheetActive) {
             ActivitySheet(items: [DebugLogger.shared.fileForSharing])
         }
+        .alert("长按倍速", isPresented: $showSpeedEditor) {
+            TextField("倍速（0.5~5.0）", text: $speedInput)
+                .keyboardType(.decimalPad)
+            Button("确定") {
+                if let v = Double(speedInput) {
+                    speedPrefs.longPressSpeed = v
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("输入倍速数值（0.5~5.0），长按画面时生效")
+        }
     }
 
     private func shareLog() {
@@ -182,16 +210,6 @@ struct SettingsView: View {
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
         }
-    }
-
-    /// 手势动作选择器
-    private func gesturePicker(title: String, slot: String, binding: Binding<PlayerGestureAction>) -> some View {
-        Picker(title, selection: binding) {
-            ForEach(PlayerGestureAction.allCases) { action in
-                Text(action.label).tag(action)
-            }
-        }
-        .font(.system(size: 14))
     }
 }
 
