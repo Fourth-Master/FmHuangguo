@@ -50,10 +50,24 @@ struct PlayerScreen: View {
     @State private var hudText = ""
     @State private var hudVisible = false
 
+    // 拖动手势状态（亮度/音量/快进）
+    @State private var dragMode: DragMode = .none
+    @State private var dragStartVolume: Float = 0
+    @State private var dragStartBrightness: CGFloat = 0
+    @State private var dragStartTime: Double = 0
+
+    enum DragMode: Equatable {
+        case none, brightness, volume, seek
+        /// 长按倍速会话进行中：本次触摸不再进入亮度/音量/快进
+        case lockedByLongPress
+    }
+
     // 长按倍速（@GestureState 保证任何结束路径都会回滚速度）
     @GestureState private var longPressActive: Bool = false
     @State private var speedBeforeLongPress: Float = 1.0
     @State private var longPressEngaged = false
+    /// 长按后上下滑微调倍速的基准（= 设置的长按倍速）
+    @State private var lpDragBaseSpeed: Float = 2.0
     /// HUD 进度条数值（0~1，nil 隐藏）
     @State private var hudProgress: Double?
 
@@ -155,19 +169,19 @@ struct PlayerScreen: View {
         .frame(height: landscape ? nil : height)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
-        .simultaneousGesture(gestureLayer())
+        .simultaneousGesture(gestureLayer(width: width))
     }
 
-    // MARK: 手势（已按需求精简：仅保留 单击呼出控制/双击暂停/长按倍速）
+    // MARK: 手势（单击呼出控制/双击暂停/长按倍速/拖动 亮度-音量-快进）
     //
     // 挂在整个播放区最外层（.simultaneousGesture），不占 hit-test 层级，
     // 控制层 Button 命中时系统直接交给 Button。
-    private func gestureLayer() -> some Gesture {
+    private func gestureLayer(width: CGFloat) -> some Gesture {
         SimultaneousGesture(
             TapGesture(count: 2).onEnded { handleDoubleTap() },
             SimultaneousGesture(
                 TapGesture().onEnded { flashControls() },
-                longPressGesture
+                SimultaneousGesture(longPressGesture, dragGesture(width: width))
             )
         )
     }
@@ -463,22 +477,37 @@ struct PlayerScreen: View {
     /// 长按：临时应用设置的倍速（默认 2x，松开恢复）
     private var longPressGesture: some Gesture {
         LongPressGesture(minimumDuration: 0.5)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
             .updating($longPressActive) { value, state, _ in
                 if case .second(true, _) = value {
                     state = true
                 }
             }
             .onChanged { value in
-                if case .second(true, _) = value {
+                if case .second(true, let drag) = value {
                     if !longPressEngaged {
                         longPressEngaged = true
                         speedBeforeLongPress = vm.speed
+                        // 长按锁定：本次触摸不再进入亮度/音量/快进
+                        dragMode = .lockedByLongPress
+                        scrubbing = false
+                        // 从设置的倍速值起步（默认 2x）
                         vm.setSpeed(Float(prefs.longPressSpeed))
+                        lpDragBaseSpeed = Float(prefs.longPressSpeed)
                         hudText = String(format: "%.2f", prefs.longPressSpeed) + " 倍速播放中"
                         hudProgress = nil
                         hudVisible = true
                         haptic(.medium)
+                    } else {
+                        // 长按后上下滑微调：每 45pt 调 0.25x（上增下减，0.5x~5x）
+                        let dy = drag?.translation.height ?? 0
+                        let steps = Int(-dy / 45)
+                        let target = max(0.5, min(5.0, lpDragBaseSpeed + Float(steps) * 0.25))
+                        if abs(target - vm.speed) >= 0.001 {
+                            vm.setSpeed(target)
+                            hudText = "倍速 " + speedLabel(target)
+                            hudProgress = Double((target - 0.5) / 4.5)
+                        }
                     }
                 }
             }
@@ -503,6 +532,73 @@ struct PlayerScreen: View {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             hudVisible = false
         }
+    }
+
+    // MARK: 拖动手势（亮度/音量/快进；长按会话期间锁定让位倍速）
+
+    private func dragGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 14)
+            .onChanged { v in
+                if dragMode == .none {
+                    // 长按倍速会话进行中：本次触摸锁定，不再进入亮度/音量/快进
+                    if longPressEngaged {
+                        dragMode = .lockedByLongPress
+                        return
+                    }
+                    let vertical = abs(v.translation.height) > abs(v.translation.width)
+                    if vertical {
+                        if v.startLocation.x < width / 2 {
+                            dragMode = .brightness
+                            dragStartBrightness = UIScreen.main.brightness
+                        } else {
+                            dragMode = .volume
+                            dragStartVolume = vm.currentVolume()
+                        }
+                    } else {
+                        dragMode = .seek
+                        dragStartTime = vm.current
+                    }
+                }
+                // 长按锁定期间完全让给倍速手势（倍速 HUD 由 longPressGesture 自己更新）
+                guard dragMode != .lockedByLongPress else { return }
+                switch dragMode {
+                case .brightness:
+                    let delta = -v.translation.height / 320
+                    let b = min(1, max(0.01, dragStartBrightness + delta))
+                    UIScreen.main.brightness = b
+                    hudText = "亮度 \(Int(b * 100))%"
+                    hudProgress = b
+                case .volume:
+                    let delta = -v.translation.height / 320
+                    let vol = min(1, max(0, dragStartVolume + delta))
+                    vm.setVolume(vol)
+                    hudText = "音量 \(Int(vol * 100))%"
+                    hudProgress = Double(vol)
+                case .seek:
+                    let delta = Double(v.translation.width) / Double(max(width, 1)) * 120
+                    let target = max(0, min(vm.duration, dragStartTime + delta))
+                    hudText = "\(fmtTime(target)) / \(fmtTime(vm.duration))"
+                    hudProgress = vm.duration > 0 ? target / vm.duration : nil
+                    scrubValue = target
+                    scrubbing = true
+                case .none, .lockedByLongPress:
+                    break
+                }
+                if dragMode != .none {
+                    hudVisible = true
+                }
+            }
+            .onEnded { _ in
+                // 锁定态（长按倍速会话）绝不执行 seek——否则调倍速会被当成快进跳播
+                if dragMode == .seek, !longPressEngaged {
+                    let target = scrubValue
+                    Task { await vm.seek(to: target) }
+                }
+                dragMode = .none
+                hudVisible = false
+                hudProgress = nil
+                scrubbing = false
+            }
     }
 
 // MARK: 工具

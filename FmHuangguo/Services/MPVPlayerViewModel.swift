@@ -241,6 +241,15 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         mpv_set_property(mpv, name, MPV_FORMAT_DOUBLE, &data)
     }
 
+    /// 音量 0~1（mpv volume 属性 0~100）
+    func setVolume(_ normalized: Float) {
+        setDouble("volume", Double(max(0, min(1, normalized))) * 100.0)
+    }
+
+    func currentVolume() -> Float {
+        Float(getDouble("volume") / 100.0)
+    }
+
     private func getDouble(_ name: String) -> Double {
         guard mpv != nil else { return 0 }
         var data = Double()
