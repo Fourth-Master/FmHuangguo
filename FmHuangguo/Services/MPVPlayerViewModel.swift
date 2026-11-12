@@ -159,7 +159,9 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         }
     }
 
-    /// 通过 loadfile 命令装载（请求头走 loadfile 的每文件选项）
+    /// 通过 loadfile 装载。请求头走 http-header-fields 属性——
+    /// 不能拼进 loadfile 选项串：新版 mpv 的 loadfile 第三个位置参数是 index，
+    /// 选项串会被误解析导致静默加载失败。
     private func issueLoad(url: URL, headers: [String: String], resume: Double?) {
         pendingURL = url
         pendingResume = resume
@@ -167,12 +169,14 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
             DebugLogger.shared.log("mpv 未就绪，挂起加载 ep=\(episode.epNum)")
             return
         }
-        var args = [url.absoluteString, "replace"]
         if !headers.isEmpty {
-            let headerStr = headers.map { "\($0.key): \($0.value)" }.joined(separator: ",")
-            args.append("http-header-fields=\(headerStr)")
+            // http-header-fields 是逗号分隔列表，条目格式 "Name: value"
+            let headerList = headers.map { "\($0.key): \($0.value)" }.joined(separator: ",")
+            var data = headerList
+            mpv_set_property_string(mpv, "http-header-fields", &data)
+            DebugLogger.shared.log("mpv 设置请求头 \(headers.keys.joined(separator: ","))")
         }
-        command("loadfile", args: args)
+        command("loadfile", args: [url.absoluteString, "replace"])
         if let r = resume, r > 10 {
             // 缓冲后 seek 到续播点
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
@@ -357,7 +361,10 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         guard mpv != nil else { return }
         var cargs: [UnsafePointer<CChar>?] = ([command] + args).map { UnsafePointer(strdup($0)) }
         cargs.append(nil)
-        mpv_command(mpv, &cargs)
+        let status = mpv_command(mpv, &cargs)
+        if status < 0 {
+            DebugLogger.shared.log("mpv command '\(command)' 失败(\(status)): \(String(cString: mpv_error_string(status)))")
+        }
         for ptr in cargs where ptr != nil {
             free(UnsafeMutablePointer(mutating: ptr))
         }

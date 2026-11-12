@@ -207,7 +207,7 @@ struct HomeView: View {
         }
     }
 
-    /// 热门标签行（🔥 前缀 + 标签 chips，点击进搜索页搜该词）
+    /// 热门标签行（🔥 前缀 + 标签 chips，点击进标签内容页）
     @ViewBuilder
     private var hotTagsRow: some View {
         if !hotTags.isEmpty {
@@ -218,7 +218,7 @@ struct HomeView: View {
                         .foregroundColor(.orange)
                     ForEach(hotTags, id: \.self) { tag in
                         NavigationLink {
-                            SearchView(initialKeyword: tag)
+                            TagView(tagName: tag)
                         } label: {
                             Text(tag)
                                 .font(.system(size: 12))

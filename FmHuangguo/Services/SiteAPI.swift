@@ -99,6 +99,17 @@ final class SiteAPI {
         return (d.items ?? [], d.pagination)
     }
 
+    // MARK: 热门标签内容（/api/videos/tag/{标签名}?page=&size=&sort=）
+
+    func tagList(tag: String, page: Int, size: Int = 21, sort: String?) async throws -> (items: [DramaSummary], pagination: Pagination?) {
+        let encoded = tag.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? tag
+        var q: [String: String] = ["page": String(page), "size": String(size)]
+        if let sort = sort, !sort.isEmpty { q["sort"] = sort }
+        let resp: APIResponse<ListData> = try await request("/api/videos/tag/\(encoded)", query: q)
+        guard resp.status == 1, let d = resp.data else { throw APIError.emptyData }
+        return (d.items ?? [], d.pagination)
+    }
+
     // MARK: 热门标签（/api/search/tags/hot?type=video）
 
     func hotTags() async throws -> [String] {
