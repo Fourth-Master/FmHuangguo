@@ -57,14 +57,20 @@ jobs:
           # 完全未签名的 app 解析报 302 "Unable to locate Info.plist"
           brew install ldid
           # 1) 主二进制伪签名（ldid -S 生成 _CodeSignature/CodeResources）
-          ldid -S "$APP/FmHuangguo"
+          which ldid
+          ldid -S "$APP/FmHuangguo" && echo "sign main OK"
           # 2) 所有嵌入 framework 伪签名
           find "$APP/Frameworks" -maxdepth 1 -name "*.framework" | while read -r fw; do
             BIN="$fw/$(basename "$fw" .framework)"
-            [ -f "$BIN" ] && ldid -S "$BIN"
+            [ -f "$BIN" ] && ldid -S "$BIN" && echo "sign $(basename "$fw") OK"
           done
-          # 3) 校验主 app 签名目录存在
-          test -d "$APP/_CodeSignature" && echo "main app _CodeSignature OK"
+          # 3) 校验主 app 签名目录存在（不存在则直接失败）
+          if [ -d "$APP/_CodeSignature" ]; then
+            echo "main app _CodeSignature OK"
+          else
+            echo "::error::主 app 未生成 _CodeSignature"
+            exit 1
+          fi
           ls -la "$APP"
           mkdir -p build/Payload
           cp -R "$APP" build/Payload/
