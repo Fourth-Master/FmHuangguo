@@ -28,6 +28,8 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
     @Published var lastLoadedURL: String = ""
     @Published var lastCdnHeaders: [String: String] = [:]
 
+    let speeds: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
+
     private var timeTimer: Timer?
     private var lastSaveAt = Date.distantPast
     private var pendingResume: Double?
