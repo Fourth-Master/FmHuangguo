@@ -346,7 +346,7 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
 
     func command(_ command: String, args: [String] = []) {
         guard mpv != nil else { return }
-        var cargs = ([command] + args).map { strdup($0) }
+        var cargs: [UnsafePointer<CChar>?] = ([command] + args).map { UnsafePointer(strdup($0)) }
         cargs.append(nil)
         mpv_command(mpv, &cargs)
         for ptr in cargs where ptr != nil {
