@@ -103,7 +103,7 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         DebugLogger.shared.log("mpv: 内核就绪")
         // 视图先于 onAppear 挂载时，补发挂起的加载
         if let url = pendingURL {
-            loadFileInMpv(url: url, resume: pendingResume)
+            issueLoad(url: url, headers: lastCdnHeaders, resume: pendingResume)
         }
     }
 
@@ -181,7 +181,7 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
                 DebugLogger.shared.log("mpv 续播 seek=\(r)")
             }
         }
-        applySpeed(speed)
+        setSpeed(speed)
         DebugLogger.shared.log("mpv loadfile 完成 ep=\(episode.epNum) resume=\(resume ?? 0)")
     }
 
@@ -350,7 +350,7 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         cargs.append(nil)
         mpv_command(mpv, &cargs)
         for ptr in cargs where ptr != nil {
-            free(UnsafeMutablePointer(mutating: ptr!))
+            free(UnsafeMutablePointer(mutating: ptr))
         }
     }
 }
