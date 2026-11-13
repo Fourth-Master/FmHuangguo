@@ -275,6 +275,34 @@ final class MPVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
         Float(getDouble("volume") / 100.0)
     }
 
+    // MARK: 属性访问（mpv C API 封装）
+
+    private func setDouble(_ name: String, _ value: Double) {
+        guard mpv != nil else { return }
+        var data = value
+        mpv_set_property(mpv, name, MPV_FORMAT_DOUBLE, &data)
+    }
+
+    private func getDouble(_ name: String) -> Double {
+        guard mpv != nil else { return 0 }
+        var data = Double()
+        mpv_get_property(mpv, name, MPV_FORMAT_DOUBLE, &data)
+        return data
+    }
+
+    private func getFlag(_ name: String) -> Bool {
+        guard mpv != nil else { return false }
+        var data: Int32 = 0
+        mpv_get_property(mpv, name, MPV_FORMAT_FLAG, &data)
+        return data != 0
+    }
+
+    private func setFlag(_ name: String, _ flag: Bool) {
+        guard mpv != nil else { return }
+        var data: Int32 = flag ? 1 : 0
+        mpv_set_property(mpv, name, MPV_FORMAT_FLAG, &data)
+    }
+
     // MARK: 进度保存
 
     func saveProgress(reset: Bool = false) {
