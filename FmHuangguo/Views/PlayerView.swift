@@ -460,27 +460,39 @@ struct PlayerScreenBody<Kernel: PlayerKernel>: View {
 
     // MARK: 选集 Sheet（底部"选集"按钮唤出）
 
+    private var episodeGridColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 84), spacing: 8)]
+    }
+
+    private func episodeChip(_ ep: Episode) -> some View {
+        let isCurrent = ep.epNum == vm.episode.epNum
+        return Button {
+            Task { await vm.load(ep: ep) }
+            showEpisodeSheet = false
+        } label: {
+            Text("第\(ep.epNum)集")
+                .font(.system(size: 13, weight: isCurrent ? .semibold : .regular))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+                .background(isCurrent ? Color.accentColor : Color(.secondarySystemBackground))
+                .foregroundColor(isCurrent ? .white : .primary)
+                .cornerRadius(10)
+        }
+    }
+
+    private var episodeGrid: some View {
+        LazyVGrid(columns: episodeGridColumns, spacing: 8) {
+            ForEach(detail.episodeList) { ep in
+                episodeChip(ep)
+            }
+        }
+        .padding(12)
+    }
+
     private var episodeSheet: some View {
         NavigationView {
             ScrollView {
-                let gridColumns = [GridItem(.adaptive(minimum: 84), spacing: 8)]
-                LazyVGrid(columns: gridColumns, spacing: 8) {
-                    ForEach(detail.episodeList) { ep in
-                        Button {
-                            Task { await vm.load(ep: ep) }
-                            showEpisodeSheet = false
-                        } label: {
-                            Text("第\(ep.epNum)集")
-                                .font(.system(size: 13, weight: ep.epNum == vm.episode.epNum ? .semibold : .regular))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 9)
-                                .background(ep.epNum == vm.episode.epNum ? Color.accentColor : Color(.secondarySystemBackground))
-                                .foregroundColor(ep.epNum == vm.episode.epNum ? .white : .primary)
-                                .cornerRadius(10)
-                        }
-                    }
-                }
-                .padding(12)
+                episodeGrid
             }
             .navigationTitle("选集")
             .navigationBarTitleDisplayMode(.inline)
