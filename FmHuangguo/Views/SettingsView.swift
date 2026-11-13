@@ -31,7 +31,7 @@ struct SettingsView: View {
             Section(header: Text("长按倍速调整"), footer: Text("长按画面时临时应用该倍速，松开恢复原速。范围 0.5x~5.0x。")) {
                 HStack(spacing: 16) {
                     Button {
-                        speedPrefs.adjust(-0.25)
+                        speedPrefs.adjust(-0.1)
                     } label: {
                         Image(systemName: "minus.circle.fill")
                             .font(.system(size: 26))
@@ -49,7 +49,7 @@ struct SettingsView: View {
                         }
                     Spacer()
                     Button {
-                        speedPrefs.adjust(0.25)
+                        speedPrefs.adjust(0.1)
                     } label: {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 26))

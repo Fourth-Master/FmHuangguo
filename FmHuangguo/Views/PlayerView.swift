@@ -499,10 +499,10 @@ struct PlayerScreen: View {
                         hudVisible = true
                         haptic(.medium)
                     } else {
-                        // 长按后上下滑微调：每 45pt 调 0.25x（上增下减，0.5x~5x）
+                        // 长按后上下滑微调：每 40pt 调 0.1x（上增下减，0.5x~5x）
                         let dy = drag?.translation.height ?? 0
-                        let steps = Int(-dy / 45)
-                        let target = max(0.5, min(5.0, lpDragBaseSpeed + Float(steps) * 0.25))
+                        let steps = Int(-dy / 40)
+                        let target = max(0.5, min(5.0, lpDragBaseSpeed + Float(steps) * 0.1))
                         if abs(target - vm.speed) >= 0.001 {
                             vm.setSpeed(target)
                             hudText = "倍速 " + speedLabel(target)

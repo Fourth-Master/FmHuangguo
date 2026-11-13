@@ -83,7 +83,8 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         mpv_set_option_string(mpv, "video-rotate", "no")
         var metalLayer: CAMetalLayer = layer
         mpv_set_option(mpv, "wid", MPV_FORMAT_INT64, &metalLayer)
-        mpv_request_log_messages(mpv, "warn")
+        // 诊断：info 级日志（demuxer/TLS/网络打开失败原因都会出现在这里）
+        mpv_request_log_messages(mpv, "info")
 
         let initStatus = mpv_initialize(mpv)
         guard initStatus >= 0 else {
@@ -92,6 +93,11 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
             return
         }
         DebugLogger.shared.log("mpv: mpv_initialize OK")
+
+        // 观察关键属性（事件驱动，配合 0.5s 轮询）
+        mpv_observe_property(mpv, 0, "pause", MPV_FORMAT_FLAG)
+        mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG)
+        mpv_observe_property(mpv, 0, "eof-reached", MPV_FORMAT_FLAG)
 
         // 唤醒回调：读属性变化事件（paused-for-cache / END_FILE）
         mpv_set_wakeup_callback(mpv, { ctx in
@@ -332,21 +338,49 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
                     let propPtr = OpaquePointer(event!.pointee.data)
                     if let prop = UnsafePointer<mpv_event_property>(propPtr)?.pointee {
                         let name = String(cString: prop.name)
-                        if name == "paused-for-cache" {
-                            let buffering = UnsafePointer<Bool>(OpaquePointer(prop.data))?.pointee ?? false
-                            DispatchQueue.main.async {
-                                self.buffering = buffering
-                                self.everPlayed = self.everPlayed || !buffering
+                        // MPV_FORMAT_FLAG 观察的数据是 Int32
+                        let flag = UnsafePointer<Int32>(OpaquePointer(prop.data))?.pointee ?? 0
+                        DispatchQueue.main.async {
+                            switch name {
+                            case "paused-for-cache":
+                                self.buffering = (flag != 0)
+                                self.everPlayed = self.everPlayed || (flag == 0)
+                            case "pause":
+                                self.playing = (flag == 0)
+                            case "eof-reached":
+                                if flag != 0 { self.playFinished() }
+                            default:
+                                break
                             }
                         }
                     }
+                case MPV_EVENT_LOG_MESSAGE:
+                    let msg = UnsafeMutablePointer<mpv_event_log_message>(OpaquePointer(event!.pointee.data))!
+                        .pointee
+                    let prefix = String(cString: msg.prefix)
+                    let level = String(cString: msg.level)
+                    let text = String(cString: msg.text).trimmingCharacters(in: .whitespacesAndNewlines)
+                    DebugLogger.shared.log("[mpv/\(level)] \(prefix): \(text)")
+                    mpv_free(msg.text)
+                    mpv_free(msg.prefix)
+                    mpv_free(msg.level)
+                case MPV_EVENT_START_FILE:
+                    DebugLogger.shared.log("mpv START_FILE ep=\(self.episode.epNum)")
                 case MPV_EVENT_END_FILE:
-                    // reason == 0 (EOF) 才算自然播完
-                    if let endFile = UnsafePointer<mpv_event_end_file>(OpaquePointer(event!.pointee.data))?.pointee,
-                       endFile.reason.rawValue == 0 {
-                        DispatchQueue.main.async { self.playFinished() }
+                    // reason: 0=EOF 1=STOP 2=QUIT 3=REDIRECT 4=ERROR
+                    if let endFile = UnsafePointer<mpv_event_end_file>(OpaquePointer(event!.pointee.data))?.pointee {
+                        let reason = endFile.reason.rawValue
+                        DebugLogger.shared.log("mpv END_FILE reason=\(reason) ep=\(self.episode.epNum)")
+                        if reason == 0 {
+                            DispatchQueue.main.async { self.playFinished() }
+                        } else if reason == 4 {
+                            DispatchQueue.main.async {
+                                self.error = "播放失败：mpv 打开文件出错（详见日志）"
+                            }
+                        }
                     }
                 case MPV_EVENT_SHUTDOWN:
+                    DebugLogger.shared.log("mpv SHUTDOWN")
                     return
                 default:
                     break
