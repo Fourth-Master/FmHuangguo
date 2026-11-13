@@ -15,6 +15,8 @@ final class AVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
     @Published var speed: Float = 1.0
     @Published var error: String?
     @Published var controlsVisible = true
+    /// 本集是否已实际开始播放过
+    @Published var everPlayed = false
 
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?

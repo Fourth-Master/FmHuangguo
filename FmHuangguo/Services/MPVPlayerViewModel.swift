@@ -113,7 +113,7 @@ final class MPVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
     // MARK: 视频输出视图（GLKView + GLES render context）
 
     func makeVideoUIView() -> UIView {
-        let view = MPVGLView()
+        let view = MPVGLView(frame: .zero)
         view.onRenderReady = { [weak self] in
             self?.mpvReady = true
             // 视图先于播放命令挂载时，补发挂起的加载
@@ -432,15 +432,14 @@ final class MPVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
 
 // mpv 头文件的宏常量不导入 Swift，手动对应（原始 Int32 值）
 private enum MPVRenderParam {
-    static let apiType: Int32 = 1                 // MPV_RENDER_PARAM_API_TYPE
-    static let openGLInitParams: Int32 = 2        // MPV_RENDER_PARAM_OPENGL_INIT_PARAMS
-    static let openGLFBO: Int32 = 3               // MPV_RENDER_PARAM_OPENGL_FBO
-    static let flipY: Int32 = 4                   // MPV_RENDER_PARAM_FLIP_Y
+    static let apiType: UInt32 = 1                 // MPV_RENDER_PARAM_API_TYPE
+    static let openGLInitParams: UInt32 = 2        // MPV_RENDER_PARAM_OPENGL_INIT_PARAMS
+    static let openGLFBO: UInt32 = 3               // MPV_RENDER_PARAM_OPENGL_FBO
+    static let flipY: UInt32 = 4                   // MPV_RENDER_PARAM_FLIP_Y
 }
 
-private let kMPVRenderAPIOpenGL = "opengl"        // MPV_RENDER_API_TYPE_OPENGL
 
-final class MPVGLView: GLKView, GLKViewDelegate {
+final class MPVGLView: GLKView {
     private(set) var mpv: OpaquePointer?
     private(set) var renderContext: OpaquePointer?
     private let eaglContext: EAGLContext
@@ -468,7 +467,7 @@ final class MPVGLView: GLKView, GLKViewDelegate {
         var glInit = mpv_opengl_init_params(
             get_proc_address: { _, name in
                 guard let name = name else { return nil }
-                return dlsym(RTLD_DEFAULT, name)
+                return dlsym(nil, name)
             },
             get_proc_address_ctx: nil
         )
