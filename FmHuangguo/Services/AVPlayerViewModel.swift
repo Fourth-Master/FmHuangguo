@@ -1,3 +1,8 @@
+import Foundation
+import AVFoundation
+import UIKit
+import Combine
+
 final class AVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
     let player = AVPlayer()
     let detail: DramaDetail
