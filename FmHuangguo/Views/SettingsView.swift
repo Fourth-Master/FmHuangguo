@@ -39,14 +39,21 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.plain)
                     Spacer()
-                    // 点击数字可直接编辑
-                    Text(String(format: "%.2fx", speedPrefs.longPressSpeed))
-                        .font(.system(size: 22, weight: .bold, design: .monospaced))
-                        .foregroundColor(.accentColor)
-                        .onTapGesture {
-                            speedInput = String(format: "%.2f", speedPrefs.longPressSpeed)
-                            showSpeedEditor = true
-                        }
+                    // 点击数字可直接编辑（Form 里 onTapGesture 会被 List 手势抢掉，改用 Button）
+                    Button {
+                        speedInput = String(format: "%.2f", speedPrefs.longPressSpeed)
+                        showSpeedEditor = true
+                    } label: {
+                        Text(String(format: "%.2fx", speedPrefs.longPressSpeed))
+                            .font(.system(size: 22, weight: .bold, design: .monospaced))
+                            .foregroundColor(.accentColor)
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
                     Spacer()
                     Button {
                         speedPrefs.adjust(0.1)
