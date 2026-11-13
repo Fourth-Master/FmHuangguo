@@ -37,6 +37,8 @@ final class AVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
         let ep = eps.first { $0.epNum == epNum } ?? eps.first
             ?? Episode(epNum: 1, videoId: "", title: "第1集", duration: 0)
         self.episode = ep
+        // 显式提前调用：后续闭包捕获 self 必须在 super.init 之后
+        super.init()
 
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
