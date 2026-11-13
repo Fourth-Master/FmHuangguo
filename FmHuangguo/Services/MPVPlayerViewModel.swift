@@ -410,6 +410,7 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
 final class MPVMetalContainerView: UIView {
     let metalLayer: MetalLayer
     var onLayerReady: ((CAMetalLayer) -> Void)?
+    private var layerReady = false
 
     override init(frame: CGRect) {
         metalLayer = MetalLayer()
@@ -431,11 +432,11 @@ final class MPVMetalContainerView: UIView {
         CATransaction.setDisableActions(true)
         metalLayer.frame = bounds
         CATransaction.commit()
-    }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        if window != nil {
+        // 首次获得有效尺寸后才把 layer 交给 mpv：
+        // didMoveToWindow 时 layout 未跑、frame 为 0×0，mpv/MoltenVK 在
+        // 0 尺寸 layer 上创建 swapchain 会闪退（START_FILE 后立刻崩）
+        if !layerReady, bounds.width > 10, bounds.height > 10 {
+            layerReady = true
             onLayerReady?(metalLayer)
         }
     }
