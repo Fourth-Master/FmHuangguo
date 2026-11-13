@@ -467,7 +467,7 @@ struct PlayerScreenBody<Kernel: PlayerKernel>: View {
     private func episodeChip(_ ep: Episode) -> some View {
         let isCurrent = ep.epNum == vm.episode.epNum
         return Button {
-            Task { await vm.load(ep: ep) }
+            Task { await vm.load(ep: ep, resume: nil) }
             showEpisodeSheet = false
         } label: {
             Text("第\(ep.epNum)集")
@@ -521,8 +521,8 @@ struct PlayerScreenBody<Kernel: PlayerKernel>: View {
                     if !longPressEngaged {
                         longPressEngaged = true
                         speedBeforeLongPress = vm.speed
-                        vm.setSpeed(Float(prefs.longPressSpeed))
-                        hudText = String(format: "%.2f", prefs.longPressSpeed) + " 倍速播放中"
+                        vm.setSpeed(Float(UserDefaults.standard.double(forKey: "long_press_speed")))
+                        hudText = String(format: "%.2f", UserDefaults.standard.double(forKey: "long_press_speed")) + " 倍速播放中"
                         hudProgress = nil
                         hudVisible = true
                         haptic(.medium)
