@@ -1,5 +1,9 @@
 import Foundation
 import os.log
+import Darwin
+
+/// 崩溃 signal handler 使用的预打开 fd（模块级全局，handler 可访问）
+fileprivate var crashSignalFD: Int32 = -1
 
 // MARK: - 调试日志（写入 Documents/debug.log，"文件"App 可直接查看）
 //
@@ -8,6 +12,9 @@ import os.log
 
 final class DebugLogger {
     static let shared = DebugLogger()
+
+    /// signal handler 使用的预打开 fd（async-signal-safe 写入）；实例 fd 的静态镜像
+    fileprivate static var signalFD: Int32 = -1
 
     private let fileURL: URL
     private let queue = DispatchQueue(label: "fmhuangguo.debuglog", qos: .utility)
@@ -82,4 +89,42 @@ final class DebugLogger {
     }
 
     var fileForSharing: URL { fileURL }
+
+    // MARK: 崩溃捕获（NSException + 常见崩溃信号，写入 debug.log）
+
+    /// App 启动时调用一次
+    static func installCrashHandler() {
+        // 确保 debug.log 存在并预打开 fd（signal handler 里只能用 write）
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let path = docs.appendingPathComponent("debug.log").path
+        if !FileManager.default.fileExists(atPath: path) {
+            FileManager.default.createFile(atPath: path, contents: nil)
+        }
+        crashSignalFD = open(path, O_WRONLY | O_APPEND)
+
+        // ObjC NSException（mpv/MoltenVK/GLES 抛的异常能被抓到并落日志）
+        NSSetUncaughtExceptionHandler { exception in
+            let text = "\n[CRASH-EXCEPTION] \(exception.name.rawValue): \(exception.reason ?? "-")\n"
+                + exception.callStackSymbols.joined(separator: "\n") + "\n"
+            text.withCString { p in
+                _ = write(crashSignalFD, p, strlen(p))
+            }
+        }
+
+        // 崩溃信号（SIGSEGV 等）：async-signal-safe 写入固定文本后恢复默认并重抛
+        let signals: [(Int32, String)] = [
+            (SIGABRT, "SIGABRT"), (SIGSEGV, "SIGSEGV"), (SIGBUS, "SIGBUS"),
+            (SIGILL, "SIGILL"), (SIGFPE, "SIGFPE"), (SIGTRAP, "SIGTRAP"),
+        ]
+        for (sig, name) in signals {
+            signal(sig) { code in
+                let msg = "\n[CRASH-SIGNAL \(name)(\(code))] App 异常终止\n"
+                msg.withCString { p in
+                    _ = write(crashSignalFD, p, strlen(p))
+                }
+                signal(code, SIG_DFL)
+                raise(code)
+            }
+        }
+    }
 }

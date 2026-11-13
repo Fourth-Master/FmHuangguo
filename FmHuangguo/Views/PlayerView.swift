@@ -1,43 +1,79 @@
 import SwiftUI
-import AVFoundation
 import UIKit
-import Combine
-import Libmpv
 
-// MARK: - 播放器视图模型（FFmpeg/VLC 内核，见 VLCPlayerViewModel.swift）
-//
-// PlayerViewModel 保留为 VLCPlayerViewModel 的类型别名，控制层代码全部通用：
-// current/duration/playing/buffering/speed/error、seek/setSpeed/load 语义一致。
+// MARK: - 视频输出视图（内核各自实现）
 
-typealias PlayerViewModel = MPVPlayerViewModel
+struct KernelVideoView<Kernel: PlayerKernel>: UIViewRepresentable {
+    let vm: Kernel
 
-// MARK: - mpv 视频输出容器（FFmpeg 内核渲染：CAMetalLayer 经 wid 交给 mpv）
-
-struct PlayerLayerView: UIViewRepresentable {
-    let vm: PlayerViewModel
-
-    func makeUIView(context: Context) -> MPVMetalContainerView {
-        let v = MPVMetalContainerView()
-        v.onLayerReady = { layer in
-            vm.attachMetalLayer(layer)
-        }
-        return v
+    func makeUIView(context: Context) -> UIView {
+        vm.makeVideoUIView()
     }
 
-    func updateUIView(_ uiView: MPVMetalContainerView, context: Context) {}
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
-// MARK: - 播放器整屏
+// MARK: - 播放器入口（按设置的内核分发）
 
 struct PlayerScreen: View {
     let detail: DramaDetail
     let startEp: Int
 
-    @EnvironmentObject private var lib: LibraryStore
-    @EnvironmentObject private var prefs: SpeedPrefs
+    var body: some View {
+        if (UserDefaults.standard.string(forKey: "player_kernel") ?? "mpv") == "avplayer" {
+            AVScreen(detail: detail, startEp: startEp)
+        } else {
+            MPVScreen(detail: detail, startEp: startEp)
+        }
+    }
+}
+
+// MARK: - mpv（FFmpeg）内核壳
+
+struct MPVScreen: View {
+    let detail: DramaDetail
+    let startEp: Int
+    @StateObject private var vm: MPVPlayerViewModel
+
+    init(detail: DramaDetail, startEp: Int) {
+        self.detail = detail
+        self.startEp = startEp
+        _vm = StateObject(wrappedValue: MPVPlayerViewModel(detail: detail, epNum: startEp))
+    }
+
+    var body: some View {
+        PlayerScreenBody(vm: vm, detail: detail, startEp: startEp)
+    }
+}
+
+// MARK: - AVPlayer 内核壳
+
+struct AVScreen: View {
+    let detail: DramaDetail
+    let startEp: Int
+    @StateObject private var vm: AVPlayerViewModel
+
+    init(detail: DramaDetail, startEp: Int) {
+        self.detail = detail
+        self.startEp = startEp
+        _vm = StateObject(wrappedValue: AVPlayerViewModel(detail: detail, epNum: startEp))
+    }
+
+    var body: some View {
+        PlayerScreenBody(vm: vm, detail: detail, startEp: startEp)
+    }
+}
+
+// MARK: - 播放器主体（双内核通用：控制层/手势/HUD/缓存/选集）
+
+struct PlayerScreenBody<Kernel: PlayerKernel>: View {
+    @ObservedObject var vm: Kernel
+    let detail: DramaDetail
+    let startEp: Int
+
+    @EnvironmentObject private var speedPrefs: SpeedPrefs
     @EnvironmentObject private var cacheManager: VideoCacheManager
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var vm: PlayerViewModel
 
     @State private var showControls = true
     /// 默认按比例完整显示（fit）；双击切换填充/完整
@@ -71,14 +107,6 @@ struct PlayerScreen: View {
     /// HUD 进度条数值（0~1，nil 隐藏）
     @State private var hudProgress: Double?
 
-    init(detail: DramaDetail, startEp: Int) {
-        self.detail = detail
-        self.startEp = startEp
-        DebugLogger.shared.log("PlayerScreen init ep=\(startEp)")
-        _vm = StateObject(wrappedValue: PlayerViewModel(detail: detail, epNum: startEp))
-        DebugLogger.shared.log("PlayerScreen init 完成 ep=\(startEp)")
-    }
-
     var body: some View {
         GeometryReader { geo in
             playerArea(width: geo.size.width, height: geo.size.height,
@@ -87,22 +115,14 @@ struct PlayerScreen: View {
         .background(Color.black.ignoresSafeArea())
         .statusBar(hidden: true)
         .onAppear {
-            DebugLogger.shared.log("onAppear 开始")
             AppDelegate.orientationLock = .allButUpsideDown
             UIViewController.attemptRotationToDeviceOrientation()
             UIApplication.shared.isIdleTimerDisabled = true
-            let resume = lib.progress(dramaId: detail.id)
-            Task {
-                DebugLogger.shared.log("onAppear: 准备 load ep=\(startEp)")
-                if let ep = detail.episodeList.first(where: { $0.epNum == startEp }) ?? detail.episodeList.first {
-                    let pos = (resume?.epNum == ep.epNum) ? resume?.position : nil
-                    await vm.load(ep: ep, resume: (pos ?? 0) > 10 ? pos : nil)
-                }
-            }
+            vm.loadInitial(startEp: startEp)
         }
         .onDisappear {
             DebugLogger.shared.log("onDisappear: 停止播放")
-            // 退出播放器必须停止 VLC（否则音频会话残留，返回后仍在后台播放）
+            // 退出播放器必须停止内核（否则音频会话残留，返回后仍在后台播放）
             vm.stopPlayback()
             if longPressEngaged {
                 longPressEngaged = false
@@ -117,9 +137,6 @@ struct PlayerScreen: View {
         .sheet(isPresented: $showEpisodeSheet) {
             episodeSheet
         }
-        .onReceive(vm.$playing) { playing in
-            if !playing { flashControls() }
-        }
     }
 
     // MARK: 播放区
@@ -127,7 +144,7 @@ struct PlayerScreen: View {
     private func playerArea(width: CGFloat, height: CGFloat, landscape: Bool) -> some View {
         ZStack {
             Color.black
-            PlayerLayerView(vm: vm)
+            KernelVideoView(vm: vm)
                 .allowsHitTesting(false)
 
             // 加载转圈：仅初始加载/切集时显示（播放中途 re-buffer 不打扰）
@@ -477,37 +494,22 @@ struct PlayerScreen: View {
     /// 长按：临时应用设置的倍速（默认 2x，松开恢复）
     private var longPressGesture: some Gesture {
         LongPressGesture(minimumDuration: 0.5)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
             .updating($longPressActive) { value, state, _ in
                 if case .second(true, _) = value {
                     state = true
                 }
             }
             .onChanged { value in
-                if case .second(true, let drag) = value {
+                if case .second(true, _) = value {
                     if !longPressEngaged {
                         longPressEngaged = true
                         speedBeforeLongPress = vm.speed
-                        // 长按锁定：本次触摸不再进入亮度/音量/快进
-                        dragMode = .lockedByLongPress
-                        scrubbing = false
-                        // 从设置的倍速值起步（默认 2x）
                         vm.setSpeed(Float(prefs.longPressSpeed))
-                        lpDragBaseSpeed = Float(prefs.longPressSpeed)
                         hudText = String(format: "%.2f", prefs.longPressSpeed) + " 倍速播放中"
                         hudProgress = nil
                         hudVisible = true
                         haptic(.medium)
-                    } else {
-                        // 长按后上下滑微调：每 40pt 调 0.1x（上增下减，0.5x~5x）
-                        let dy = drag?.translation.height ?? 0
-                        let steps = Int(-dy / 40)
-                        let target = max(0.5, min(5.0, lpDragBaseSpeed + Float(steps) * 0.1))
-                        if abs(target - vm.speed) >= 0.001 {
-                            vm.setSpeed(target)
-                            hudText = "倍速 " + speedLabel(target)
-                            hudProgress = Double((target - 0.5) / 4.5)
-                        }
                     }
                 }
             }
@@ -519,7 +521,6 @@ struct PlayerScreen: View {
                 }
             }
     }
-
 
     /// 双击：暂停/播放
     private func handleDoubleTap() {
@@ -601,7 +602,7 @@ struct PlayerScreen: View {
             }
     }
 
-// MARK: 工具
+    // MARK: 工具
 
     private func flashControls() {
         withAnimation { showControls = true }
@@ -630,58 +631,5 @@ struct PlayerScreen: View {
     private func speedLabel(_ s: Float) -> String {
         if s == floorf(s) { return "\(Int(s))x" }
         return "\(s)x"
-    }
-}
-
-// MARK: - 自定义进度条（点击跳转 + 拖动 seek，替代 Slider 的手势竞态问题）
-
-struct SeekBar: View {
-    let current: Double
-    let duration: Double
-    let onSeek: (Double) -> Void
-    let onScrub: (Double?) -> Void
-
-    @State private var dragValue: Double?
-
-    private var progress: Double {
-        if let dv = dragValue { return min(1, max(0, dv / max(duration, 0.001))) }
-        return min(1, max(0, current / max(duration, 0.001)))
-    }
-
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            ZStack(alignment: .leading) {
-                // 轨道
-                Capsule()
-                    .fill(Color.white.opacity(0.28))
-                    .frame(height: 4)
-                // 已播
-                Capsule()
-                    .fill(Color.white)
-                    .frame(width: max(0, w * progress), height: 4)
-                // 手柄
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: progress > 0 ? 12 : 0, height: 12)
-                    .offset(x: max(0, w * progress - 6))
-            }
-            .frame(maxHeight: .infinity, alignment: .center)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { v in
-                        let t = min(max(0, v.location.x / max(w, 1)), 1) * duration
-                        dragValue = t
-                        onScrub(t)
-                    }
-                    .onEnded { _ in
-                        let t = dragValue ?? 0
-                        dragValue = nil
-                        onScrub(nil)
-                        onSeek(t)
-                    }
-            )
-        }
     }
 }

@@ -2,16 +2,26 @@ import Foundation
 import SwiftUI
 import UIKit
 import AVFoundation
+import GLKit
+import OpenGLES
+import Combine
 import Libmpv
 
-// MARK: - FFmpeg(mpv) 内核播放器视图模型
+// MARK: - FFmpeg(mpv) 内核播放器视图模型（OpenGL ES 渲染）
 //
-// 集成方式照 MPVKit Demo：CAMetalLayer 通过 wid 交给 mpv，
-// vo=gpu-next + gpu-context=moltenvk 由 mpv 内部渲染（无需手写渲染循环）。
+// 渲染方式：vo=libmpv + mpv_render_context（OpenGL/GLES）
+// —— 绕开 MoltenVK/Vulkan（该路径在部分设备上创建 swapchain 即崩溃）。
 // mpv 的 speed 属性自带 scaletempo2 音频同步——高倍速与恢复后音画不失步。
 
-final class MPVPlayerViewModel: NSObject, ObservableObject {
-    var mpv: OpaquePointer!
+// mpv 头文件的宏常量不导入 Swift，手动对应
+private let kMPVRenderParamAPIType: Int32 = 1              // MPV_RENDER_PARAM_API_TYPE
+private let kMPVRenderParamOpenGLInitParams: Int32 = 2     // MPV_RENDER_PARAM_OPENGL_INIT_PARAMS
+private let kMPVRenderParamOpenGLFBO: Int32 = 3            // MPV_RENDER_PARAM_OPENGL_FBO
+private let kMPVRenderParamFlipY: Int32 = 4                // MPV_RENDER_PARAM_FLIP_Y
+private let kMPVRenderAPIOpenGL = "opengl"                 // MPV_RENDER_API_TYPE_OPENGL
+
+final class MPVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
+    var mpv: OpaquePointer?
     let detail: DramaDetail
 
     @Published var episode: Episode
@@ -28,14 +38,15 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
     @Published var lastLoadedURL: String = ""
     @Published var lastCdnHeaders: [String: String] = [:]
 
-    let speeds: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
-
     private var timeTimer: Timer?
     private var lastSaveAt = Date.distantPast
     private var pendingResume: Double?
     private var pendingURL: URL?
     private var mpvReady = false
+    private var renderContext: OpaquePointer?
     private var eventsQueue = DispatchQueue(label: "fmhuangguo.mpv.events", qos: .userInitiated)
+
+    let speeds: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
 
     init(detail: DramaDetail, epNum: Int) {
         self.detail = detail
@@ -48,10 +59,47 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
 
-        // 0.5s 轮询进度/状态（属性读取线程安全）
+        DebugLogger.shared.log("mpv: 开始创建内核")
+        mpv = mpv_create()
+        guard mpv != nil else {
+            DebugLogger.shared.log("mpv: mpv_create 失败")
+            error = "mpv 内核创建失败"
+            return
+        }
+        DebugLogger.shared.log("mpv: mpv_create OK")
+
+        // 渲染交给 render API（GLKView GLES），内核不再直接持有窗口
+        mpv_set_option_string(mpv, "vo", "libmpv")
+        mpv_set_option_string(mpv, "hwdec", "videotoolbox")
+        mpv_set_option_string(mpv, "cache", "yes")
+
+        let initStatus = mpv_initialize(mpv)
+        guard initStatus >= 0 else {
+            DebugLogger.shared.log("mpv: mpv_initialize 失败 \(initStatus)")
+            error = "mpv 内核初始化失败"
+            return
+        }
+        DebugLogger.shared.log("mpv: mpv_initialize OK")
+
+        // 诊断：info 级日志（demuxer/TLS/网络打开失败原因都会出现在这里）
+        mpv_request_log_messages(mpv, "info")
+
+        // 观察关键属性（事件驱动，配合 0.5s 轮询）
+        mpv_observe_property(mpv, 0, "pause", MPV_FORMAT_FLAG)
+        mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG)
+        mpv_observe_property(mpv, 0, "eof-reached", MPV_FORMAT_FLAG)
+
+        // 唤醒回调：读属性变化事件
+        mpv_set_wakeup_callback(mpv, { ctx in
+            let vm = unsafeBitCast(ctx, to: MPVPlayerViewModel.self)
+            vm.readEvents()
+        }, UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()))
+
+        // 0.5s 轮询进度（属性读取线程安全）
         timeTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             DispatchQueue.main.async { self?.tick() }
         }
+        DebugLogger.shared.log("mpv: 内核就绪")
     }
 
     deinit {
@@ -62,55 +110,20 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         }
     }
 
-    // MARK: 视图挂载后初始化 mpv（wid 需要已就绪的 CAMetalLayer）
+    // MARK: 视频输出视图（GLKView + GLES render context）
 
-    func attachMetalLayer(_ layer: CAMetalLayer) {
-        guard mpv == nil else { return }
-        DebugLogger.shared.log("mpv: 开始创建内核")
-
-        mpv = mpv_create()
-        guard mpv != nil else {
-            DebugLogger.shared.log("mpv: mpv_create 失败")
-            error = "mpv 内核创建失败"
-            return
+    func makeVideoUIView() -> UIView {
+        let view = MPVGLView()
+        view.onRenderReady = { [weak self] in
+            self?.mpvReady = true
+            // 视图先于播放命令挂载时，补发挂起的加载
+            if let url = self?.pendingURL {
+                self?.issueLoad(url: url, headers: self?.lastCdnHeaders ?? [:], resume: self?.pendingResume)
+            }
         }
-        DebugLogger.shared.log("mpv: mpv_create OK")
-
-        mpv_set_option_string(mpv, "vo", "gpu-next")
-        mpv_set_option_string(mpv, "gpu-api", "vulkan")
-        mpv_set_option_string(mpv, "gpu-context", "moltenvk")
-        mpv_set_option_string(mpv, "hwdec", "videotoolbox")
-        mpv_set_option_string(mpv, "video-rotate", "no")
-        var metalLayer: CAMetalLayer = layer
-        mpv_set_option(mpv, "wid", MPV_FORMAT_INT64, &metalLayer)
-        // 诊断：info 级日志（demuxer/TLS/网络打开失败原因都会出现在这里）
-        mpv_request_log_messages(mpv, "info")
-
-        let initStatus = mpv_initialize(mpv)
-        guard initStatus >= 0 else {
-            DebugLogger.shared.log("mpv: mpv_initialize 失败 \(initStatus)")
-            error = "mpv 内核初始化失败"
-            return
-        }
-        DebugLogger.shared.log("mpv: mpv_initialize OK")
-
-        // 观察关键属性（事件驱动，配合 0.5s 轮询）
-        mpv_observe_property(mpv, 0, "pause", MPV_FORMAT_FLAG)
-        mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG)
-        mpv_observe_property(mpv, 0, "eof-reached", MPV_FORMAT_FLAG)
-
-        // 唤醒回调：读属性变化事件（paused-for-cache / END_FILE）
-        mpv_set_wakeup_callback(mpv, { ctx in
-            let vm = unsafeBitCast(ctx, to: MPVPlayerViewModel.self)
-            vm.readEvents()
-        }, UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()))
-
-        mpvReady = true
-        DebugLogger.shared.log("mpv: 内核就绪")
-        // 视图先于 onAppear 挂载时，补发挂起的加载
-        if let url = pendingURL {
-            issueLoad(url: url, headers: lastCdnHeaders, resume: pendingResume)
-        }
+        // render context 创建（mpv 已在 init 里 initialize）
+        view.attach(mpv: mpv)
+        return view
     }
 
     // MARK: 加载
@@ -195,8 +208,6 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         DebugLogger.shared.log("mpv loadfile 完成 ep=\(episode.epNum) resume=\(resume ?? 0)")
     }
 
-    private func startPlayback() {}
-
     // MARK: 剧集切换
 
     var nextEpisode: Episode? { detail.episodeList.first { $0.epNum > episode.epNum } }
@@ -208,6 +219,17 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
 
     func playPrev() async {
         if let p = prevEpisode { await load(ep: p) }
+    }
+
+    /// 进入播放器后按起始集加载（含续播逻辑）
+    func loadInitial(startEp: Int) {
+        let resume = LibraryStore.shared.progress(dramaId: detail.id)
+        Task {
+            if let ep = detail.episodeList.first(where: { $0.epNum == startEp }) ?? detail.episodeList.first {
+                let pos = (resume?.epNum == ep.epNum) ? resume?.position : nil
+                await load(ep: ep, resume: (pos ?? 0) > 10 ? pos : nil)
+            }
+        }
     }
 
     private func playFinished() {
@@ -226,7 +248,6 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         let paused = getFlag("pause")
         setFlag("pause", !paused)
         if paused {
-            // 恢复播放时重申倍速（mpv 恢复后 speed 属性会保持，这里兜底）
             setDouble("speed", Double(speed))
         } else {
             saveProgress()
@@ -245,12 +266,6 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         setDouble("speed", Double(s))
     }
 
-    func setDouble(_ name: String, _ value: Double) {
-        guard mpv != nil else { return }
-        var data = value
-        mpv_set_property(mpv, name, MPV_FORMAT_DOUBLE, &data)
-    }
-
     /// 音量 0~1（mpv volume 属性 0~100）
     func setVolume(_ normalized: Float) {
         setDouble("volume", Double(max(0, min(1, normalized))) * 100.0)
@@ -258,26 +273,6 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
 
     func currentVolume() -> Float {
         Float(getDouble("volume") / 100.0)
-    }
-
-    private func getDouble(_ name: String) -> Double {
-        guard mpv != nil else { return 0 }
-        var data = Double()
-        mpv_get_property(mpv, name, MPV_FORMAT_DOUBLE, &data)
-        return data
-    }
-
-    private func getFlag(_ name: String) -> Bool {
-        guard mpv != nil else { return false }
-        var data: Int64 = 0
-        mpv_get_property(mpv, name, MPV_FORMAT_FLAG, &data)
-        return data > 0
-    }
-
-    private func setFlag(_ name: String, _ flag: Bool) {
-        guard mpv != nil else { return }
-        var data: Int32 = flag ? 1 : 0
-        mpv_set_property(mpv, name, MPV_FORMAT_FLAG, &data)
     }
 
     // MARK: 进度保存
@@ -405,52 +400,108 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
     }
 }
 
-// MARK: - Metal 视图容器（CAMetalLayer 提供给 mpv 的 wid）
+// MARK: - mpv OpenGL ES 渲染视图
 
-final class MPVMetalContainerView: UIView {
-    let metalLayer: MetalLayer
-    var onLayerReady: ((CAMetalLayer) -> Void)?
-    private var layerReady = false
+// mpv 头文件的宏常量不导入 Swift，手动对应（原始 Int32 值）
+private enum MPVRenderParam {
+    static let apiType: Int32 = 1                 // MPV_RENDER_PARAM_API_TYPE
+    static let openGLInitParams: Int32 = 2        // MPV_RENDER_PARAM_OPENGL_INIT_PARAMS
+    static let openGLFBO: Int32 = 3               // MPV_RENDER_PARAM_OPENGL_FBO
+    static let flipY: Int32 = 4                   // MPV_RENDER_PARAM_FLIP_Y
+}
+
+private let kMPVRenderAPIOpenGL = "opengl"        // MPV_RENDER_API_TYPE_OPENGL
+
+final class MPVGLView: GLKView, GLKViewDelegate {
+    private(set) var mpv: OpaquePointer?
+    private(set) var renderContext: OpaquePointer?
+    private let eaglContext: EAGLContext
+    private var renderReady = false
+    var onRenderReady: (() -> Void)?
 
     override init(frame: CGRect) {
-        metalLayer = MetalLayer()
-        super.init(frame: frame)
-        metalLayer.contentsScale = UIScreen.main.nativeScale
-        metalLayer.framebufferOnly = true
-        metalLayer.backgroundColor = UIColor.black.cgColor
-        layer.addSublayer(metalLayer)
-        backgroundColor = .black
+        eaglContext = EAGLContext(api: .openGLES3)!
+        super.init(frame: frame, context: eaglContext)
+        enableSetNeedsDisplay = true
+        backgroundColor = UIColor.black
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        metalLayer.frame = bounds
-        CATransaction.commit()
-        // 首次获得有效尺寸后才把 layer 交给 mpv：
-        // didMoveToWindow 时 layout 未跑、frame 为 0×0，mpv/MoltenVK 在
-        // 0 尺寸 layer 上创建 swapchain 会闪退（START_FILE 后立刻崩）
-        if !layerReady, bounds.width > 10, bounds.height > 10 {
-            layerReady = true
-            onLayerReady?(metalLayer)
-        }
-    }
-}
+    /// mpv 句柄注入（mpv_initialize 之后调用，创建 GLES render context）
+    func attach(mpv handle: OpaquePointer) {
+        guard renderContext == nil else { return }
+        mpv = handle
+        EAGLContext.setCurrent(eaglContext)
 
-/// MoltenVK 会把 drawableSize 置 1x1 强制完成呈现，导致闪烁/停留 1x1
-/// https://github.com/mpv-player/mpv/pull/13651
-final class MetalLayer: CAMetalLayer {
-    override var drawableSize: CGSize {
-        get { super.drawableSize }
-        set {
-            if Int(newValue.width) > 1 && Int(newValue.height) > 1 {
-                super.drawableSize = newValue
-            }
+        // mpv_opengl_init_params：get_proc_address 用 dlsym 解析 GLES 符号
+        var glInit = mpv_opengl_init_params(
+            get_proc_address: { _, name in
+                guard let name = name else { return nil }
+                return dlsym(RTLD_DEFAULT, name)
+            },
+            get_proc_address_ctx: nil
+        )
+
+        var params: [mpv_render_param] = [
+            mpv_render_param(
+                type: mpv_render_param_type(MPVRenderParam.apiType),
+                data: UnsafeMutableRawPointer(mutating: (kMPVRenderAPIOpenGL as NSString).utf8String)
+            ),
+            mpv_render_param(
+                type: mpv_render_param_type(MPVRenderParam.openGLInitParams),
+                data: &glInit
+            ),
+            mpv_render_param(),
+        ]
+
+        var ctx: OpaquePointer?
+        let status = mpv_render_context_create(&ctx, mpv, &params)
+        guard status >= 0, let created = ctx else {
+            DebugLogger.shared.log("mpv render context 创建失败(\(status))")
+            return
         }
+        renderContext = created
+        renderReady = true
+
+        // mpv 通知有新帧 → 触发 GLKView 重绘
+        mpv_render_context_set_update_callback(created, { ctx in
+            let view = unsafeBitCast(ctx, to: MPVGLView.self)
+            DispatchQueue.main.async {
+                view.setNeedsDisplay()
+            }
+        }, UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()))
+
+        DebugLogger.shared.log("mpv GLES render context OK")
+        onRenderReady?()
+    }
+
+    // MARK: 绘制（GLKView 驱动，每帧把 mpv 解码画面画进 FBO）
+
+    override func draw(_ rect: CGRect) {
+        guard renderReady, let rc = renderContext else { return }
+        EAGLContext.setCurrent(eaglContext)
+
+        var fbo: GLint = 0
+        glGetIntegerv(GLenum(GL_FRAMEBUFFER_BINDING), &fbo)
+        let w = Int32(drawableWidth)
+        let h = Int32(drawableHeight)
+
+        var glFBO = mpv_opengl_fbo(fbo: fbo, w: w, h: h, internal_format: 0)
+        var flip: Int32 = 1
+        var params: [mpv_render_param] = [
+            mpv_render_param(
+                type: mpv_render_param_type(MPVRenderParam.openGLFBO),
+                data: &glFBO
+            ),
+            mpv_render_param(
+                type: mpv_render_param_type(MPVRenderParam.flipY),
+                data: &flip
+            ),
+            mpv_render_param(),
+        ]
+        mpv_render_context_render(rc, &params)
     }
 }
