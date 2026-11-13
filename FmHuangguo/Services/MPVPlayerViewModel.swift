@@ -122,7 +122,7 @@ final class MPVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
             }
         }
         // render context 创建（mpv 已在 init 里 initialize）
-        view.attach(mpv: mpv)
+        view.attach(mpv: mpv!)
         return view
     }
 

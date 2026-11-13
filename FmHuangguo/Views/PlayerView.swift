@@ -193,14 +193,18 @@ struct PlayerScreenBody<Kernel: PlayerKernel>: View {
     //
     // 挂在整个播放区最外层（.simultaneousGesture），不占 hit-test 层级，
     // 控制层 Button 命中时系统直接交给 Button。
+    private var doubleTapGesture: some Gesture {
+        TapGesture(count: 2).onEnded { handleDoubleTap() }
+    }
+
+    private var singleTapGesture: some Gesture {
+        TapGesture().onEnded { flashControls() }
+    }
+
     private func gestureLayer(width: CGFloat) -> some Gesture {
-        SimultaneousGesture(
-            TapGesture(count: 2).onEnded { handleDoubleTap() },
-            SimultaneousGesture(
-                TapGesture().onEnded { flashControls() },
-                SimultaneousGesture(longPressGesture, dragGesture(width: width))
-            )
-        )
+        let taps = SimultaneousGesture(doubleTapGesture, singleTapGesture)
+        let core = SimultaneousGesture(longPressGesture, dragGesture(width: width))
+        return SimultaneousGesture(taps, core)
     }
 
     // MARK: 控制层
@@ -631,5 +635,55 @@ struct PlayerScreenBody<Kernel: PlayerKernel>: View {
     private func speedLabel(_ s: Float) -> String {
         if s == floorf(s) { return "\(Int(s))x" }
         return "\(s)x"
+    }
+}
+
+// MARK: - 自定义进度条（点击跳转 + 拖动 seek，替代 Slider 的手势竞态问题）
+
+struct SeekBar: View {
+    let current: Double
+    let duration: Double
+    let onSeek: (Double) -> Void
+    let onScrub: (Double?) -> Void
+
+    @State private var dragValue: Double?
+
+    private var progress: Double {
+        if let dv = dragValue { return min(1, max(0, dv / max(duration, 0.001))) }
+        return min(1, max(0, current / max(duration, 0.001)))
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.28))
+                    .frame(height: 4)
+                Capsule()
+                    .fill(Color.white)
+                    .frame(width: max(0, w * progress), height: 4)
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: progress > 0 ? 12 : 0, height: 12)
+                    .offset(x: max(0, w * progress - 6))
+            }
+            .frame(maxHeight: .infinity, alignment: .center)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { v in
+                        let t = min(max(0, v.location.x / max(w, 1)), 1) * duration
+                        dragValue = t
+                        onScrub(t)
+                    }
+                    .onEnded { _ in
+                        let t = dragValue ?? 0
+                        dragValue = nil
+                        onScrub(nil)
+                        onSeek(t)
+                    }
+            )
+        }
     }
 }

@@ -28,6 +28,8 @@ protocol PlayerKernel: ObservableObject {
 
     /// 进入播放器后按起始集加载（含续播逻辑）
     func loadInitial(startEp: Int)
+    /// 加载指定集（重试/选集切换）
+    func load(ep: Episode, resume: Double?) async
     func togglePlay()
     func seek(to t: Double)
     func setSpeed(_ s: Float)
