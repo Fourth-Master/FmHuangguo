@@ -129,7 +129,7 @@ struct PlayerScreenBody<Kernel: PlayerKernel>: View {
                 vm.setSpeed(speedBeforeLongPress)
                 hudVisible = false
             }
-            vm.saveProgress()
+            vm.saveProgress(reset: false)
             UIApplication.shared.isIdleTimerDisabled = false
             AppDelegate.orientationLock = .portrait
             UIViewController.attemptRotationToDeviceOrientation()
@@ -214,7 +214,7 @@ struct PlayerScreenBody<Kernel: PlayerKernel>: View {
             // 顶部
             HStack(spacing: 12) {
                 Button {
-                    vm.saveProgress()
+                    vm.saveProgress(reset: false)
                     dismiss()
                 } label: {
                     Image(systemName: "chevron.left")
@@ -441,7 +441,7 @@ struct PlayerScreenBody<Kernel: PlayerKernel>: View {
                         .cornerRadius(16)
                 }
                 Button {
-                    vm.saveProgress()
+                    vm.saveProgress(reset: false)
                     dismiss()
                 } label: {
                     Text("返回")
