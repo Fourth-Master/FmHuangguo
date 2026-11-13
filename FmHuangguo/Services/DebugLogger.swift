@@ -112,16 +112,16 @@ final class DebugLogger {
         }
 
         // 崩溃信号（SIGSEGV 等）：async-signal-safe 写入固定文本后恢复默认并重抛
-        let signals: [(Int32, String)] = [
-            (SIGABRT, "SIGABRT"), (SIGSEGV, "SIGSEGV"), (SIGBUS, "SIGBUS"),
-            (SIGILL, "SIGILL"), (SIGFPE, "SIGFPE"), (SIGTRAP, "SIGTRAP"),
-        ]
-        for (sig, name) in signals {
+        // 注意：C 函数指针闭包不能捕获上下文（循环变量 name 不可引用），
+        // 信号编号对照：6=SIGABRT 11=SIGSEGV 7=SIGBUS 4=SIGILL 8=SIGFPE 5=SIGTRAP
+        let signalNumbers: [Int32] = [SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGTRAP]
+        for sig in signalNumbers {
             signal(sig) { code in
-                let msg = "\n[CRASH-SIGNAL \(name)(\(code))] App 异常终止\n"
+                let msg = "\n[CRASH-SIGNAL \(code)] App 异常终止\n"
                 msg.withCString { p in
                     _ = write(crashSignalFD, p, strlen(p))
                 }
+                // 恢复默认处理并重新抛出，让系统照常记录崩溃报告
                 signal(code, SIG_DFL)
                 raise(code)
             }
