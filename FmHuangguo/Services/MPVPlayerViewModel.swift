@@ -361,9 +361,9 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
                     let level = String(cString: msg.level)
                     let text = String(cString: msg.text).trimmingCharacters(in: .whitespacesAndNewlines)
                     DebugLogger.shared.log("[mpv/\(level)] \(prefix): \(text)")
-                    mpv_free(msg.text)
-                    mpv_free(msg.prefix)
-                    mpv_free(msg.level)
+                    mpv_free(UnsafeMutableRawPointer(mutating: msg.text))
+                    mpv_free(UnsafeMutableRawPointer(mutating: msg.prefix))
+                    mpv_free(UnsafeMutableRawPointer(mutating: msg.level))
                 case MPV_EVENT_START_FILE:
                     DebugLogger.shared.log("mpv START_FILE ep=\(self.episode.epNum)")
                 case MPV_EVENT_END_FILE:
