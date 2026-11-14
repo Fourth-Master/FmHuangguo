@@ -128,9 +128,13 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         // render context 创建（mpv 已在 init 里 initialize）
         guard let handle = mpv else {
             DebugLogger.shared.log("mpv 内核不可用（创建/初始化失败），无画面")
+            error = "mpv 内核不可用，无法播放"
             return view
         }
-        view.attach(mpv: handle)
+        if !view.attach(mpv: handle) {
+            // 渲染上下文创建失败：明确报错，不再黑屏挂起
+            error = "视频渲染初始化失败（详见日志）"
+        }
         return view
     }
 
@@ -462,7 +466,8 @@ final class MPVGLView: GLKView {
     var onRenderReady: (() -> Void)?
 
     override init(frame: CGRect) {
-        eaglContext = EAGLContext(api: .openGLES3)!
+        // ES2 与 MPVKit 官方 Demo 一致（iOS GLES 渲染验证过的组合）
+        eaglContext = EAGLContext(api: .openGLES2)!
         super.init(frame: frame, context: eaglContext)
         enableSetNeedsDisplay = true
         backgroundColor = UIColor.black
@@ -483,16 +488,21 @@ final class MPVGLView: GLKView {
     }
 
     /// mpv 句柄注入（mpv_initialize 之后调用，创建 GLES render context）
-    func attach(mpv handle: OpaquePointer) {
-        guard renderContext == nil else { return }
+    /// 返回是否创建成功
+    @discardableResult
+    func attach(mpv handle: OpaquePointer) -> Bool {
+        guard renderContext == nil else { return true }
         mpv = handle
         EAGLContext.setCurrent(eaglContext)
 
-        // mpv_opengl_init_params：get_proc_address 用 dlsym 解析 GLES 符号
+        // mpv_opengl_init_params：iOS 的 OpenGLES 符号 dlsym 拿不到（渲染 -18
+        // "Can't load OpenGL functions"），必须用 CFBundle 从 OpenGLES 框架解析
         var glInit = mpv_opengl_init_params(
             get_proc_address: { _, name in
                 guard let name = name else { return nil }
-                return dlsym(nil, name)
+                let bundle = CFBundleGetBundleWithIdentifier("com.apple.opengles" as CFString)
+                let symbol = CFStringCreateWithCString(kCFAllocatorDefault, name, CFStringBuiltInEncodings.ASCII.rawValue)
+                return CFBundleGetFunctionPointerForName(bundle, symbol)
             },
             get_proc_address_ctx: nil
         )
@@ -513,7 +523,7 @@ final class MPVGLView: GLKView {
         let status = mpv_render_context_create(&ctx, mpv, &params)
         guard status >= 0, let created = ctx else {
             DebugLogger.shared.log("mpv render context 创建失败(\(status))")
-            return
+            return false
         }
         renderContext = created
         renderReady = true
@@ -528,6 +538,7 @@ final class MPVGLView: GLKView {
 
         DebugLogger.shared.log("mpv GLES render context OK")
         onRenderReady?()
+        return true
     }
 
     // MARK: 绘制（GLKView 驱动，每帧把 mpv 解码画面画进 FBO）
