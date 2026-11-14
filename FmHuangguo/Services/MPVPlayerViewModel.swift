@@ -473,11 +473,11 @@ final class MPVGLView: GLKView {
     }
 
     deinit {
-        // 视图销毁必须先摘掉帧回调并释放 render context，
+        // 视图销毁必须先摘掉帧回调并销毁 render context，
         // 否则 mpv 后续帧仍会回调这个已释放的视图（闪退）
         if let rc = renderContext {
             mpv_render_context_set_update_callback(rc, nil, nil)
-            mpv_render_context_release(rc)
+            mpv_render_context_free(rc)
             renderContext = nil
         }
     }
