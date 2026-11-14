@@ -39,12 +39,13 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.plain)
                     Spacer()
-                    // 点击数字可直接编辑（Form 里 onTapGesture 会被 List 手势抢掉，改用 Button）
+                    // 点击数字可直接编辑（sheet 编辑器：iOS 15 的 alert 不支持
+                    // 嵌入 TextField，iOS 16 才有，低版本只弹壳没法输入）
                     Button {
-                        speedInput = String(format: "%.2f", speedPrefs.longPressSpeed)
+                        speedInput = String(format: "%.1f", speedPrefs.longPressSpeed)
                         showSpeedEditor = true
                     } label: {
-                        Text(String(format: "%.2fx", speedPrefs.longPressSpeed))
+                        Text(String(format: "%.1fx", speedPrefs.longPressSpeed))
                             .font(.system(size: 22, weight: .bold, design: .monospaced))
                             .foregroundColor(.accentColor)
                             .padding(.horizontal, 10).padding(.vertical, 4)
@@ -186,18 +187,72 @@ struct SettingsView: View {
         .sheet(isPresented: $shareSheetActive) {
             ActivitySheet(items: [DebugLogger.shared.fileForSharing])
         }
-        .alert("长按倍速", isPresented: $showSpeedEditor) {
-            TextField("倍速（0.5~5.0）", text: $speedInput)
-                .keyboardType(.decimalPad)
-            Button("确定") {
-                if let v = Double(speedInput) {
-                    speedPrefs.longPressSpeed = v
+        .sheet(isPresented: $showSpeedEditor) {
+            speedEditor
+        }
+    }
+
+    // MARK: 长按倍速编辑器（sheet：iOS 15 alert 无法嵌输入框）
+
+    private var speedEditor: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                Text("长按画面时临时应用该倍速，松开恢复原速。\n范围 0.5~5.0，步进 0.1。")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+
+                TextField("倍速（0.5~5.0）", text: $speedInput)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.center)
+                    .font(.system(size: 30, weight: .bold, design: .monospaced))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 180)
+
+                HStack(spacing: 28) {
+                    Button {
+                        speedPrefs.adjust(-0.1)
+                        speedInput = String(format: "%.1f", speedPrefs.longPressSpeed)
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.system(size: 34))
+                            .foregroundColor(.accentColor)
+                    }
+                    Text(String(format: "%.1fx", speedPrefs.longPressSpeed))
+                        .font(.system(size: 26, weight: .bold, design: .monospaced))
+                        .frame(minWidth: 80)
+                    Button {
+                        speedPrefs.adjust(0.1)
+                        speedInput = String(format: "%.1f", speedPrefs.longPressSpeed)
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 34))
+                            .foregroundColor(.accentColor)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.top, 28)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("取消") { showSpeedEditor = false }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("确定") { applySpeedInput() }
                 }
             }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("输入倍速数值（0.5~5.0），长按画面时生效")
+            .navigationTitle("长按倍速")
+            .navigationBarTitleDisplayMode(.inline)
         }
+        .navigationViewStyle(.stack)
+    }
+
+    private func applySpeedInput() {
+        let cleaned = speedInput.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "x", with: "")
+        if let v = Double(cleaned) {
+            speedPrefs.set((v * 10).rounded() / 10) // set 内部钳制 0.5~5.0 并量化 0.1
+        }
+        showSpeedEditor = false
     }
 
     private func shareLog() {

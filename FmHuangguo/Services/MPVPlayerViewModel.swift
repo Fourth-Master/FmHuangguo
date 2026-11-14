@@ -49,7 +49,7 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
     weak var glView: MPVGLView?
     private var eventsQueue = DispatchQueue(label: "fmhuangguo.mpv.events", qos: .userInitiated)
 
-    let speeds: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
+    let speeds: [Float] = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
 
     init(detail: DramaDetail, epNum: Int) {
         self.detail = detail
@@ -504,8 +504,9 @@ final class MPVGLView: GLKView {
     var onRenderReady: (() -> Void)?
 
     override init(frame: CGRect) {
-        // ES2 与 MPVKit 官方 Demo 一致（iOS GLES 渲染验证过的组合）
-        eaglContext = EAGLContext(api: .openGLES2)!
+        // ES3：ES2 上下文缺 mpv 需要的纹理格式枚举（日志 OpenGL INVALID_ENUM，
+        // dumb mode 降级）。GL 函数解析已由 CFBundle 解决，ES3 正常。
+        eaglContext = EAGLContext(api: .openGLES3)!
         super.init(frame: frame, context: eaglContext)
         enableSetNeedsDisplay = true
         backgroundColor = UIColor.black

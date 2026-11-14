@@ -14,9 +14,9 @@ final class SpeedPrefs: ObservableObject {
         longPressSpeed = saved > 0 ? saved : 2.0
     }
 
-    /// 设置倍速（钳制 0.5~5.0 并持久化；不用 didSet 防递归）
+    /// 设置倍速（钳制 0.5~5.0、量化到一位小数并持久化；不用 didSet 防递归）
     func set(_ value: Double) {
-        let clamped = max(0.5, min(5.0, value))
+        let clamped = max(0.5, min(5.0, (value * 10).rounded() / 10))
         longPressSpeed = clamped
         UserDefaults.standard.set(clamped, forKey: "long_press_speed")
     }
