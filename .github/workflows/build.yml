@@ -86,14 +86,14 @@ jobs:
           mkdir -p build/Payload
           cp -R "$APP" build/Payload/
           cd build
-          zip -qry FmHuangguo-1.3.7.ipa Payload
-          ls -lh FmHuangguo-1.3.7.ipa
+          zip -qry FmHuangguo-1.3.8.ipa Payload
+          ls -lh FmHuangguo-1.3.8.ipa
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: FmHuangguo-ipa
-          path: build/FmHuangguo-1.3.7.ipa
+          path: build/FmHuangguo-1.3.8.ipa
           if-no-files-found: error
 
       - name: Publish to Release (latest)
@@ -101,13 +101,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat > /tmp/notes-src.md <<'NOTES'
-          Fm黄果 iOS 短剧播放器 v1.3.7（伪签名 ipa，需自行签名安装）
+          Fm黄果 iOS 短剧播放器 v1.3.8（伪签名 ipa，需自行签名安装）
 
-          - 修复播放器黑屏：iOS 的 OpenGL ES 函数指针改用 CFBundle 解析
-            （dlsym 拿不到符号，导致渲染上下文创建失败、无画面）
-          - 渲染初始化失败时直接显示错误提示（不再黑屏挂起）
+          - 修复 m3u8 打开 400：User-Agent 改走 mpv 专用选项（避免与 ffmpeg
+            内置 UA 重复发送被 CDN 拒绝），请求头逐项校验并落日志
+          - 修复退出播放器瞬间的竞态崩溃：渲染上下文销毁改为主线程串行
+            （mpv 渲染函数不可并发的官方规则）
           - mpv（FFmpeg）单内核：高倍速/倍速恢复音画同步，无横跳；渲染走
-            OpenGL ES，修复长期闪退（MoltenVK 交换层崩溃）
+            OpenGL ES（v1.3.6 起修复长期闪退；v1.3.7 修复 GL 函数解析黑屏）
           - 日志记录 App 版本 + iOS 版本 + 机型，方便对照排查
           - 深浅配色模式、热门标签直达、长按倍速、双击暂停、离线缓存、每日更新检测
           - 支持 iOS 15.4+
@@ -116,10 +117,10 @@ jobs:
           NOTES
           sed 's/^  //' /tmp/notes-src.md > /tmp/release-notes.md
           if gh release view latest >/dev/null 2>&1; then
-            gh release upload latest build/FmHuangguo-1.3.7.ipa --clobber
+            gh release upload latest build/FmHuangguo-1.3.8.ipa --clobber
           else
-            gh release create latest build/FmHuangguo-1.3.7.ipa \
-              --title "Fm黄果 v1.3.7" \
+            gh release create latest build/FmHuangguo-1.3.8.ipa \
+              --title "Fm黄果 v1.3.8" \
               --notes-file /tmp/release-notes.md \
               --latest
           fi

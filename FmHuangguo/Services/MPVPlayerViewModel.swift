@@ -43,7 +43,10 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
     private var pendingResume: Double?
     private var pendingURL: URL?
     private var mpvReady = false
-    private var renderContext: OpaquePointer?
+    /// GLES render context（视图 attach 时创建并填入；销毁归 VM 串行管理）
+    var renderContext: OpaquePointer?
+    /// 渲染视图弱引用（mpv 帧回调经此转发，视图销毁后自动置空）
+    weak var glView: MPVGLView?
     private var eventsQueue = DispatchQueue(label: "fmhuangguo.mpv.events", qos: .userInitiated)
 
     let speeds: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
@@ -110,6 +113,11 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         if let handle = mpv {
             mpv = nil
             mpv_set_wakeup_callback(handle, nil, nil)
+            if let rc = renderContext {
+                mpv_render_context_set_update_callback(rc, nil, nil)
+                mpv_render_context_free(rc)
+                renderContext = nil
+            }
             mpv_terminate_destroy(handle)
         }
     }
@@ -131,7 +139,7 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
             error = "mpv 内核不可用，无法播放"
             return view
         }
-        if !view.attach(mpv: handle) {
+        if !view.attach(vm: self, mpv: handle) {
             // 渲染上下文创建失败：明确报错，不再黑屏挂起
             error = "视频渲染初始化失败（详见日志）"
         }
@@ -200,13 +208,7 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
             DebugLogger.shared.log("mpv 未就绪，挂起加载 ep=\(episode.epNum)")
             return
         }
-        if !headers.isEmpty {
-            // http-header-fields 是逗号分隔列表，条目格式 "Name: value"
-            let headerList = headers.map { "\($0.key): \($0.value)" }.joined(separator: ",")
-            var data = headerList
-            mpv_set_property_string(mpv, "http-header-fields", &data)
-            DebugLogger.shared.log("mpv 设置请求头 \(headers.keys.joined(separator: ","))")
-        }
+        setHTTPHeaders(headers)
         command("loadfile", args: [url.absoluteString, "replace"])
         if let r = resume, r > 10 {
             // 缓冲后 seek 到续播点
@@ -218,6 +220,34 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         }
         setSpeed(speed)
         DebugLogger.shared.log("mpv loadfile 完成 ep=\(episode.epNum) resume=\(resume ?? 0)")
+    }
+
+    /// 设置 HTTP 请求头。
+    ///
+    /// User-Agent 必须走 mpv 专用 `user-agent` 选项：ffmpeg 对协议自带头有内置
+    /// 生成逻辑，UA 混进 http-header-fields 在部分版本会与内置 UA 重复发送，
+    /// CDN 对重复 UA 直接回 400 Bad Request。其余自定义头用 http-header-fields，
+    /// 条目用 mpv 的 %n% 长度前缀写法，值里出现逗号等特殊字符无需转义。
+    /// 每次设置都检查返回码并落日志（属性名不存在/格式错会在日志里暴露）。
+    private func setHTTPHeaders(_ headers: [String: String]) {
+        guard mpv != nil else { return }
+        var ua = headers["User-Agent"] ?? RouteService.ua
+        let uaStatus = mpv_set_property_string(mpv, "user-agent", &ua)
+        if uaStatus < 0 {
+            DebugLogger.shared.log("mpv 设置 user-agent 失败(\(uaStatus)): \(String(cString: mpv_error_string(uaStatus)))")
+        }
+
+        let custom = headers.filter { $0.key != "User-Agent" }
+        let headerList = custom.map { pair -> String in
+            let entry = "\(pair.key): \(pair.value)"
+            return "%\(entry.utf8.count)%\(entry)"
+        }.joined(separator: ",")
+        var data = headerList
+        let st = mpv_set_property_string(mpv, "http-header-fields", &data)
+        if st < 0 {
+            DebugLogger.shared.log("mpv 设置 http-header-fields 失败(\(st)): \(String(cString: mpv_error_string(st)))")
+        }
+        DebugLogger.shared.log("mpv 请求头: user-agent + \(custom.keys.sorted().joined(separator: ",")) (ua=\(uaStatus>=0 ? "OK" : "FAIL") hdr=\(st>=0 ? "OK" : "FAIL"))")
     }
 
     // MARK: 剧集切换
@@ -332,8 +362,14 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
 
     /// 退出播放器：终止 mpv（音频会话随内核销毁，返回后绝无后台播放）
     ///
-    /// mpv_terminate_destroy 不能与其他 API 并发调用（官方文档），而 readEvents
-    /// 在 eventsQueue 上轮询 mpv_wait_event——销毁必须排进同一队列串行执行。
+    /// 线程安全设计（依据官方文档两条硬规则）：
+    /// 1) mpv_terminate_destroy 不能与其他 client API 并发，而 readEvents 在
+    ///    eventsQueue 轮询 mpv_wait_event——先置 mpv=nil 让事件块自行退出，再
+    ///    eventsQueue.sync 排空在途块；
+    /// 2) mpv_render_* 函数互斥（render.h），render/free 必须与主线程 GLKView
+    ///    draw 串行——因此 render context 的释放和内核销毁都在主线程（stopPlayback
+    ///    由 onDisappear 在主线程调用），与 draw 天然互斥。旧版把销毁丢到
+    ///    eventsQueue 与主线程 draw/deinit 并发，是退出闪退的根因。
     func stopPlayback() {
         guard let handle = mpv else { return }
         mpv = nil
@@ -343,10 +379,14 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
         saveProgress()
         DebugLogger.shared.log("stopPlayback ep=\(episode.epNum)")
         mpv_set_wakeup_callback(handle, nil, nil)
-        eventsQueue.async {
-            mpv_terminate_destroy(handle)
-            DebugLogger.shared.log("mpv 内核已销毁")
+        eventsQueue.sync { } // 排空在途事件块（块内看到 mpv==nil 立即返回）
+        if let rc = renderContext {
+            mpv_render_context_set_update_callback(rc, nil, nil)
+            mpv_render_context_free(rc)
+            renderContext = nil
         }
+        mpv_terminate_destroy(handle)
+        DebugLogger.shared.log("mpv 内核已销毁")
     }
 
     // MARK: 内部
@@ -459,10 +499,8 @@ private enum MPVRenderParam {
 
 
 final class MPVGLView: GLKView {
-    private(set) var mpv: OpaquePointer?
-    private(set) var renderContext: OpaquePointer?
     private let eaglContext: EAGLContext
-    private var renderReady = false
+    weak var vm: MPVPlayerViewModel?
     var onRenderReady: (() -> Void)?
 
     override init(frame: CGRect) {
@@ -477,22 +515,16 @@ final class MPVGLView: GLKView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-        // 视图销毁必须先摘掉帧回调并销毁 render context，
-        // 否则 mpv 后续帧仍会回调这个已释放的视图（闪退）
-        if let rc = renderContext {
-            mpv_render_context_set_update_callback(rc, nil, nil)
-            mpv_render_context_free(rc)
-            renderContext = nil
-        }
-    }
+    // 注意：deinit 不碰任何 mpv/render API——render context 归 VM 所有，
+    // 由 VM.stopPlayback 在主线程串行销毁（render.h：mpv_render_* 互斥，
+    // 且必须与主线程 draw 串行）。视图 deinit 与销毁竞态是 v1.3.7 退出闪退根因。
 
     /// mpv 句柄注入（mpv_initialize 之后调用，创建 GLES render context）
     /// 返回是否创建成功
     @discardableResult
-    func attach(mpv handle: OpaquePointer) -> Bool {
-        guard renderContext == nil else { return true }
-        mpv = handle
+    func attach(vm: MPVPlayerViewModel, mpv handle: OpaquePointer) -> Bool {
+        guard vm.renderContext == nil else { return true }
+        self.vm = vm
         EAGLContext.setCurrent(eaglContext)
 
         // mpv_opengl_init_params：iOS 的 OpenGLES 符号 dlsym 拿不到（渲染 -18
@@ -520,21 +552,22 @@ final class MPVGLView: GLKView {
         ]
 
         var ctx: OpaquePointer?
-        let status = mpv_render_context_create(&ctx, mpv, &params)
+        let status = mpv_render_context_create(&ctx, handle, &params)
         guard status >= 0, let created = ctx else {
             DebugLogger.shared.log("mpv render context 创建失败(\(status))")
             return false
         }
-        renderContext = created
-        renderReady = true
+        vm.renderContext = created
 
-        // mpv 通知有新帧 → 触发 GLKView 重绘
+        // mpv 通知有新帧 → 触发 GLKView 重绘。回调上下文挂 VM（VM 在内核销毁前
+        // 一定存活），经弱引用转发到视图——视图先于内核销毁也不会踩已释放对象
+        vm.glView = self
         mpv_render_context_set_update_callback(created, { ctx in
-            let view = unsafeBitCast(ctx, to: MPVGLView.self)
+            let owner = unsafeBitCast(ctx, to: MPVPlayerViewModel.self)
             DispatchQueue.main.async {
-                view.setNeedsDisplay()
+                owner.glView?.setNeedsDisplay()
             }
-        }, UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()))
+        }, UnsafeMutableRawPointer(Unmanaged.passUnretained(vm).toOpaque()))
 
         DebugLogger.shared.log("mpv GLES render context OK")
         onRenderReady?()
@@ -544,7 +577,7 @@ final class MPVGLView: GLKView {
     // MARK: 绘制（GLKView 驱动，每帧把 mpv 解码画面画进 FBO）
 
     override func draw(_ rect: CGRect) {
-        guard renderReady, let rc = renderContext else { return }
+        guard let vm = vm, vm.mpv != nil, let rc = vm.renderContext else { return }
         EAGLContext.setCurrent(eaglContext)
 
         var fbo: GLint = 0
