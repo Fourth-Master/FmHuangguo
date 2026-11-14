@@ -98,6 +98,7 @@ struct HistoryView: View {
                 checkedIds.insert(rec.dramaId)
                 if total > 0 {
                     lib.applyFreshTotal(dramaId: rec.dramaId, total: total)
+                    lib.repairBaseline(dramaId: rec.dramaId, total: total)
                 }
             } catch {
                 // 静默：单条失败不影响列表
@@ -228,9 +229,21 @@ struct FavoritesView: View {
     @ViewBuilder
     private func favCard(_ fav: FavoriteItem) -> some View {
         let hasNew = hasUpdate(fav)
+        let record = lib.progress(fav.dramaId)
+        // 集数标签优先用检测到的最新集数（收藏时存的是当时的集数）
+        let totalLabel: String
+        if let current = lib.freshTotals[fav.dramaId], current > fav.totalEpisodes {
+            totalLabel = "更新至\(current)集"
+        } else if fav.isFinished {
+            totalLabel = "全\(fav.totalEpisodes)集"
+        } else if fav.totalEpisodes > 0 {
+            totalLabel = "更新至\(fav.totalEpisodes)集"
+        } else {
+            totalLabel = ""
+        }
         DramaCard(title: fav.title,
                   cover: fav.cover,
-                  episodeLabel: fav.isFinished ? "全\(fav.totalEpisodes)集" : (fav.totalEpisodes > 0 ? "更新至\(fav.totalEpisodes)集" : ""))
+                  episodeLabel: totalLabel)
             .overlay(alignment: .topTrailing) {
                 if hasNew {
                     Text("NEW")
@@ -243,6 +256,34 @@ struct FavoritesView: View {
                         .padding(6)
                 }
             }
+            .overlay(alignment: .bottom) {
+                // 观看信息：看过这部剧时显示看到第几集 + 进度条
+                if let rec = record {
+                    VStack(spacing: 4) {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.white.opacity(0.35))
+                                Capsule()
+                                    .fill(Color.accentColor)
+                                    .frame(width: geo.size.width * watchFraction(rec))
+                            }
+                        }
+                        .frame(height: 3)
+                        Text("看到第\(rec.epNum)集 \(fmtTime(rec.position)) / \(fmtTime(rec.duration))")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 7)
+                    .allowsHitTesting(false)
+                }
+            }
+    }
+
+    private func watchFraction(_ rec: PlayRecord) -> CGFloat {
+        guard rec.duration > 0 else { return 0 }
+        return CGFloat(min(1, max(0, rec.position / rec.duration)))
     }
 
     private func hasUpdate(_ fav: FavoriteItem) -> Bool {
@@ -262,6 +303,7 @@ struct FavoritesView: View {
                 checkedIds.insert(fav.dramaId)
                 if total > 0 {
                     lib.applyFreshTotal(dramaId: fav.dramaId, total: total)
+                    lib.repairBaseline(dramaId: fav.dramaId, total: total)
                 }
             } catch {
                 // 静默

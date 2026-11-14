@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var activeSheet: SettingsSheet?
     /// 长按倍速行内编辑框内容（直接在设置页改数字，不弹窗）
     @State private var speedText = ""
+    @FocusState private var speedFieldFocused: Bool
 
     enum SettingsSheet: Identifiable {
         case logViewer, shareLog
@@ -49,6 +50,7 @@ struct SettingsView: View {
                     // 同视图其他 sheet 冲突，直接在数字处改最稳
                     TextField("0.5~5.0", text: $speedText)
                         .keyboardType(.decimalPad)
+                        .focused($speedFieldFocused)
                         .multilineTextAlignment(.center)
                         .font(.system(size: 22, weight: .bold, design: .monospaced))
                         .foregroundColor(.accentColor)
@@ -58,6 +60,13 @@ struct SettingsView: View {
                                 .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
                         )
                         .frame(width: 96)
+                        .toolbar {
+                            // decimalPad 没有收起键：键盘工具条加"完成"收起（iOS 15 支持）
+                            ToolbarItemGroup(placement: .keyboard) {
+                                Spacer()
+                                Button("完成") { speedFieldFocused = false }
+                            }
+                        }
                         .onAppear {
                             speedText = String(format: "%.1f", speedPrefs.longPressSpeed)
                         }

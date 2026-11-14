@@ -28,6 +28,7 @@ enum UpdateChecker {
             if let total = await fetchTotal(dramaId: rec.dramaId) {
                 await MainActor.run {
                     lib.applyFreshTotal(dramaId: rec.dramaId, total: total)
+                    lib.repairBaseline(dramaId: rec.dramaId, total: total)
                 }
             }
             try? await Task.sleep(nanoseconds: 250_000_000)
@@ -44,6 +45,7 @@ enum UpdateChecker {
             if let total = await fetchTotal(dramaId: fav.dramaId) {
                 await MainActor.run {
                     lib.applyFreshTotal(dramaId: fav.dramaId, total: total)
+                    lib.repairBaseline(dramaId: fav.dramaId, total: total)
                 }
             }
             try? await Task.sleep(nanoseconds: 250_000_000)

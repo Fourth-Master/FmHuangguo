@@ -76,11 +76,14 @@ final class LibraryStore: ObservableObject {
     func upsertProgress(dramaId: Int, title: String, cover: String,
                         epNum: Int, epVideoId: String,
                         position: Double, duration: Double) {
+        // 保留已有的更新检测基准（seenTotalEpisodes）——播放中每 5 秒会保存一次
+        // 进度，若重写为 0，"已更新至X集"红字的基准就永远不存在了
+        let prevSeen = history.first { $0.dramaId == dramaId }?.seenTotalEpisodes ?? 0
         history.removeAll { $0.dramaId == dramaId }
         let rec = PlayRecord(dramaId: dramaId, title: title, cover: cover,
                              epNum: epNum, epVideoId: epVideoId,
                              position: max(0, position), duration: max(0, duration),
-                             updatedAt: Date(), seenTotalEpisodes: 0)
+                             updatedAt: Date(), seenTotalEpisodes: prevSeen)
         history.insert(rec, at: 0)
         if history.count > 200 { history = Array(history.prefix(200)) }
         save()
@@ -116,6 +119,24 @@ final class LibraryStore: ObservableObject {
         if let idx = favorites.firstIndex(where: { $0.dramaId == dramaId }),
            favorites[idx].markedTotalEpisodes != currentTotalEpisodes {
             favorites[idx].markedTotalEpisodes = currentTotalEpisodes
+            changed = true
+        }
+        if changed { save() }
+    }
+
+    /// 修复 0 基准：老版本 upsertProgress 曾把基准清零，检测到集数时补记，
+    /// 否则这些条目永远无法参与"有更新"判定（基准必须 > 0）
+    func repairBaseline(dramaId: Int, total: Int) {
+        guard total > 0 else { return }
+        var changed = false
+        if let idx = history.firstIndex(where: { $0.dramaId == dramaId }),
+           history[idx].seenTotalEpisodes == 0 {
+            history[idx].seenTotalEpisodes = total
+            changed = true
+        }
+        if let idx = favorites.firstIndex(where: { $0.dramaId == dramaId }),
+           favorites[idx].markedTotalEpisodes == 0 {
+            favorites[idx].markedTotalEpisodes = total
             changed = true
         }
         if changed { save() }
