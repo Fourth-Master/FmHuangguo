@@ -20,7 +20,7 @@ private let kMPVRenderParamOpenGLFBO: Int32 = 3            // MPV_RENDER_PARAM_O
 private let kMPVRenderParamFlipY: Int32 = 4                // MPV_RENDER_PARAM_FLIP_Y
 private let kMPVRenderAPIOpenGL = "opengl"                 // MPV_RENDER_API_TYPE_OPENGL
 
-final class MPVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
+final class MPVPlayerViewModel: NSObject, ObservableObject {
     var mpv: OpaquePointer?
     let detail: DramaDetail
 
@@ -104,9 +104,13 @@ final class MPVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
 
     deinit {
         timeTimer?.invalidate()
-        if let mpv = mpv {
-            mpv_set_wakeup_callback(mpv, nil, nil)
-            mpv_terminate_destroy(mpv)
+        // 正常路径 stopPlayback 已销毁（mpv == nil）。兜底销毁直接执行是安全的：
+        // 事件块执行期间持有强引用（此时不可能 deinit），deinit 时不可能有事件块
+        // 正在用句柄轮询。
+        if let handle = mpv {
+            mpv = nil
+            mpv_set_wakeup_callback(handle, nil, nil)
+            mpv_terminate_destroy(handle)
         }
     }
 
@@ -122,7 +126,11 @@ final class MPVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
             }
         }
         // render context 创建（mpv 已在 init 里 initialize）
-        view.attach(mpv: mpv!)
+        guard let handle = mpv else {
+            DebugLogger.shared.log("mpv 内核不可用（创建/初始化失败），无画面")
+            return view
+        }
+        view.attach(mpv: handle)
         return view
     }
 
@@ -319,16 +327,22 @@ final class MPVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
     }
 
     /// 退出播放器：终止 mpv（音频会话随内核销毁，返回后绝无后台播放）
+    ///
+    /// mpv_terminate_destroy 不能与其他 API 并发调用（官方文档），而 readEvents
+    /// 在 eventsQueue 上轮询 mpv_wait_event——销毁必须排进同一队列串行执行。
     func stopPlayback() {
-        guard mpv != nil else { return }
-        saveProgress()
-        DebugLogger.shared.log("stopPlayback ep=\(episode.epNum)")
-        mpv_set_wakeup_callback(mpv, nil, nil)
-        mpv_terminate_destroy(mpv)
+        guard let handle = mpv else { return }
         mpv = nil
         mpvReady = false
         playing = false
         buffering = false
+        saveProgress()
+        DebugLogger.shared.log("stopPlayback ep=\(episode.epNum)")
+        mpv_set_wakeup_callback(handle, nil, nil)
+        eventsQueue.async {
+            mpv_terminate_destroy(handle)
+            DebugLogger.shared.log("mpv 内核已销毁")
+        }
     }
 
     // MARK: 内部
@@ -350,8 +364,10 @@ final class MPVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
 
     private func readEvents() {
         eventsQueue.async { [weak self] in
-            guard let self = self, let mpv = self.mpv else { return }
-            while self.mpv != nil {
+            guard let self = self else { return }
+            while true {
+                // 每轮重读句柄：stopPlayback 置 nil 后立即退出（销毁也在本队列串行执行）
+                guard let mpv = self.mpv else { return }
                 let event = mpv_wait_event(mpv, 0)
                 let eventId = event!.pointee.event_id
                 if eventId == MPV_EVENT_NONE { break }
@@ -378,15 +394,14 @@ final class MPVPlayerViewModel: NSObject, ObservableObject, PlayerKernel {
                         }
                     }
                 case MPV_EVENT_LOG_MESSAGE:
+                    // prefix/level/text 归 mpv 所有，在下一次 mpv_wait_event 时被
+                    // mpv 自动释放（官方文档），这里绝不能 mpv_free（堆破坏→闪退）
                     let msg = UnsafeMutablePointer<mpv_event_log_message>(OpaquePointer(event!.pointee.data))!
                         .pointee
                     let prefix = String(cString: msg.prefix)
                     let level = String(cString: msg.level)
                     let text = String(cString: msg.text).trimmingCharacters(in: .whitespacesAndNewlines)
                     DebugLogger.shared.log("[mpv/\(level)] \(prefix): \(text)")
-                    mpv_free(UnsafeMutableRawPointer(mutating: msg.text))
-                    mpv_free(UnsafeMutableRawPointer(mutating: msg.prefix))
-                    mpv_free(UnsafeMutableRawPointer(mutating: msg.level))
                 case MPV_EVENT_START_FILE:
                     DebugLogger.shared.log("mpv START_FILE ep=\(self.episode.epNum)")
                 case MPV_EVENT_END_FILE:
@@ -455,6 +470,16 @@ final class MPVGLView: GLKView {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        // 视图销毁必须先摘掉帧回调并释放 render context，
+        // 否则 mpv 后续帧仍会回调这个已释放的视图（闪退）
+        if let rc = renderContext {
+            mpv_render_context_set_update_callback(rc, nil, nil)
+            mpv_render_context_release(rc)
+            renderContext = nil
+        }
     }
 
     /// mpv 句柄注入（mpv_initialize 之后调用，创建 GLES render context）

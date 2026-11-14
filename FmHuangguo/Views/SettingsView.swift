@@ -7,7 +7,6 @@ struct SettingsView: View {
     @EnvironmentObject private var speedPrefs: SpeedPrefs
     @EnvironmentObject private var cache: VideoCacheManager
     @EnvironmentObject private var theme: ThemePrefs
-    @AppStorage("player_kernel") private var kernelChoice = "mpv"
     @State private var cacheCleared = false
     @State private var logCleared = false
     @State private var showLogViewer = false
@@ -17,14 +16,6 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section(header: Text("播放内核"), footer: Text("mpv 出现播放异常（如闪退/黑屏）时可切换 AVPlayer 系统内核。")) {
-                Picker("内核", selection: $kernelChoice) {
-                    Text("mpv (FFmpeg)").tag("mpv")
-                    Text("AVPlayer (系统)").tag("avplayer")
-                }
-                .font(.system(size: 14))
-            }
-
             Section(header: Text("外观")) {
                 Picker("配色模式", selection: Binding(
                     get: { theme.mode },

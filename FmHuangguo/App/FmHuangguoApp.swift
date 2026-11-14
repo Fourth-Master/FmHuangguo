@@ -26,6 +26,8 @@ struct FmHuangguoApp: App {
     init() {
         // 崩溃捕获：NSException/Signal 写入 debug.log（定位 mpv 闪退）
         DebugLogger.installCrashHandler()
+        // 启动行：App 版本 + iOS 版本 + 机型（每段日志都能对上环境）
+        DebugLogger.shared.logSystemInfo()
 
         // 底部 TabBar / 导航栏不透明背景（修复 iOS 15 半透明导致的"全透明"观感）
         let tabAppearance = UITabBarAppearance()

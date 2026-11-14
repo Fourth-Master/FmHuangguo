@@ -38,11 +38,36 @@ final class DebugLogger {
         let last = UserDefaults.standard.string(forKey: "debug_log_build_version")
         guard last != current else { return }
         UserDefaults.standard.set(current, forKey: "debug_log_build_version")
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         queue.async { [weak self] in
             guard let self = self else { return }
-            let header = "[--] App 更新到 v\(version) (build \(current))，日志已清空 --\n"
+            let header = "[--] App 更新到 \(DebugLogger.systemInfoLine())，日志已清空 --\n"
             try? header.write(to: self.fileURL, atomically: true, encoding: .utf8)
+        }
+    }
+
+    // MARK: 系统信息（App 版本 + iOS 版本 + 机型，日志头/启动行用）
+
+    /// 形如 "v1.3.6 (build 25) iOS 17.5.1 (iPhone15,3)"
+    static func systemInfoLine() -> String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        let ios = "\(os.majorVersion).\(os.minorVersion)" + (os.patchVersion > 0 ? ".\(os.patchVersion)" : "")
+        return "v\(version) (build \(build)) iOS \(ios) (\(deviceModel()))"
+    }
+
+    /// App 启动时打一行系统信息（版本/iOS/机型），方便对照任何一段日志
+    func logSystemInfo() {
+        log("[SYS] \(DebugLogger.systemInfoLine())")
+    }
+
+    /// 硬件机型标识（如 iPhone15,3），不依赖 UIKit
+    private static func deviceModel() -> String {
+        var sys = utsname()
+        uname(&sys)
+        return withUnsafeBytes(of: &sys.machine) { raw in
+            String(cString: raw.baseAddress!.assumingMemoryBound(to: CChar.self))
         }
     }
 

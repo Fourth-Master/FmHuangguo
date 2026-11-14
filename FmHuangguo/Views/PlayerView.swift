@@ -1,10 +1,10 @@
 import SwiftUI
 import UIKit
 
-// MARK: - 视频输出视图（内核各自实现）
+// MARK: - 视频输出视图（mpv GLES render API）
 
-struct KernelVideoView<Kernel: PlayerKernel>: UIViewRepresentable {
-    let vm: Kernel
+struct KernelVideoView: UIViewRepresentable {
+    let vm: MPVPlayerViewModel
 
     func makeUIView(context: Context) -> UIView {
         vm.makeVideoUIView()
@@ -13,24 +13,9 @@ struct KernelVideoView<Kernel: PlayerKernel>: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
-// MARK: - 播放器入口（按设置的内核分发）
+// MARK: - 播放器入口（mpv 单内核）
 
 struct PlayerScreen: View {
-    let detail: DramaDetail
-    let startEp: Int
-
-    var body: some View {
-        if (UserDefaults.standard.string(forKey: "player_kernel") ?? "mpv") == "avplayer" {
-            AVScreen(detail: detail, startEp: startEp)
-        } else {
-            MPVScreen(detail: detail, startEp: startEp)
-        }
-    }
-}
-
-// MARK: - mpv（FFmpeg）内核壳
-
-struct MPVScreen: View {
     let detail: DramaDetail
     let startEp: Int
     @StateObject private var vm: MPVPlayerViewModel
@@ -46,28 +31,10 @@ struct MPVScreen: View {
     }
 }
 
-// MARK: - AVPlayer 内核壳
+// MARK: - 播放器主体（控制层/手势/HUD/缓存/选集）
 
-struct AVScreen: View {
-    let detail: DramaDetail
-    let startEp: Int
-    @StateObject private var vm: AVPlayerViewModel
-
-    init(detail: DramaDetail, startEp: Int) {
-        self.detail = detail
-        self.startEp = startEp
-        _vm = StateObject(wrappedValue: AVPlayerViewModel(detail: detail, epNum: startEp))
-    }
-
-    var body: some View {
-        PlayerScreenBody(vm: vm, detail: detail, startEp: startEp)
-    }
-}
-
-// MARK: - 播放器主体（双内核通用：控制层/手势/HUD/缓存/选集）
-
-struct PlayerScreenBody<Kernel: PlayerKernel>: View {
-    @ObservedObject var vm: Kernel
+struct PlayerScreenBody: View {
+    @ObservedObject var vm: MPVPlayerViewModel
     let detail: DramaDetail
     let startEp: Int
 
