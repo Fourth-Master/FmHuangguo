@@ -230,20 +230,9 @@ struct FavoritesView: View {
     private func favCard(_ fav: FavoriteItem) -> some View {
         let hasNew = hasUpdate(fav)
         let record = lib.progress(dramaId: fav.dramaId)
-        // 集数标签优先用检测到的最新集数（收藏时存的是当时的集数）
-        let totalLabel: String
-        if let current = lib.freshTotals[fav.dramaId], current > fav.totalEpisodes {
-            totalLabel = "更新至\(current)集"
-        } else if fav.isFinished {
-            totalLabel = "全\(fav.totalEpisodes)集"
-        } else if fav.totalEpisodes > 0 {
-            totalLabel = "更新至\(fav.totalEpisodes)集"
-        } else {
-            totalLabel = ""
-        }
         DramaCard(title: fav.title,
                   cover: fav.cover,
-                  episodeLabel: totalLabel)
+                  episodeLabel: favEpisodeLabel(fav))
             .overlay(alignment: .topTrailing) {
                 if hasNew {
                     Text("NEW")
@@ -289,6 +278,16 @@ struct FavoritesView: View {
     private func hasUpdate(_ fav: FavoriteItem) -> Bool {
         guard let current = lib.freshTotals[fav.dramaId] else { return false }
         return lib.favoriteHasUpdate(fav, currentTotal: current)
+    }
+
+    /// 集数标签：优先用检测到的最新集数（收藏时存的是当时的集数）
+    private func favEpisodeLabel(_ fav: FavoriteItem) -> String {
+        if let current = lib.freshTotals[fav.dramaId], current > fav.totalEpisodes {
+            return "更新至\(current)集"
+        }
+        if fav.isFinished { return "全\(fav.totalEpisodes)集" }
+        if fav.totalEpisodes > 0 { return "更新至\(fav.totalEpisodes)集" }
+        return ""
     }
 
     /// 批量刷新收藏剧集的最新总集数（优先用每日检测的共享缓存）
