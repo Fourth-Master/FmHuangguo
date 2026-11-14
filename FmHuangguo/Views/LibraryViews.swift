@@ -229,7 +229,7 @@ struct FavoritesView: View {
     @ViewBuilder
     private func favCard(_ fav: FavoriteItem) -> some View {
         let hasNew = hasUpdate(fav)
-        let record = lib.progress(fav.dramaId)
+        let record = lib.progress(dramaId: fav.dramaId)
         // 集数标签优先用检测到的最新集数（收藏时存的是当时的集数）
         let totalLabel: String
         if let current = lib.freshTotals[fav.dramaId], current > fav.totalEpisodes {
