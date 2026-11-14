@@ -37,7 +37,7 @@ struct RouteSplashView: View {
                     }
                 }
 
-                Text("Fm黄果")
+                Text("FM短剧")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundColor(.white)
                 Text("短剧极速播放器 · 自动选择最快线路")

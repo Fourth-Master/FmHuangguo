@@ -11,8 +11,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.3.11"
-    CURRENT_PROJECT_VERSION: "30"
+    MARKETING_VERSION: "1.3.12"
+    CURRENT_PROJECT_VERSION: "31"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -30,7 +30,7 @@ targets:
     info:
       path: FmHuangguo/Info.plist
       properties:
-        CFBundleDisplayName: Fm黄果
+        CFBundleDisplayName: FM短剧
         CFBundleName: FmHuangguo
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"

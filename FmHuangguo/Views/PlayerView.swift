@@ -73,6 +73,8 @@ struct PlayerScreenBody: View {
     @State private var longPressEngaged = false
     /// 长按上下滑微调的基准倍速（= 进入长按时应用的倍速）
     @State private var speedTuneBase: Float = 2.0
+    /// 微调会话中上次已应用的倍速（用于每变化一档触发一次震动）
+    @State private var lastTunedSpeed: Float = 0
     /// 长按后上下滑微调倍速的基准（= 设置的长按倍速）
     @State private var lpDragBaseSpeed: Float = 2.0
     /// HUD 进度条数值（0~1，nil 隐藏）
@@ -535,6 +537,7 @@ struct PlayerScreenBody: View {
                         if abs(v.translation.height) > abs(v.translation.width) {
                             dragMode = .speedTune
                             speedTuneBase = vm.speed
+                            lastTunedSpeed = vm.speed
                         } else {
                             dragMode = .lockedByLongPress
                         }
@@ -577,12 +580,17 @@ struct PlayerScreenBody: View {
                     scrubValue = target
                     scrubbing = true
                 case .speedTune:
-                    // 长按上下滑微调：每 30pt ±0.1，范围 0.5~5.0，量化到一位小数
-                    let delta = Float(-v.translation.height) / 30.0 * 0.1
+                    // 长按上下滑微调：每 15pt ±0.1（短行程），范围 0.5~5.0，
+                    // 量化到一位小数；每变化一档轻震动反馈
+                    let delta = Float(-v.translation.height) / 15.0 * 0.1
                     let s = max(0.5, min(5.0, speedTuneBase + delta))
                     let q = (s * 10).rounded() / 10
-                    vm.setSpeed(q)
-                    hudText = String(format: "%.1f", q) + " 倍速播放中"
+                    if q != lastTunedSpeed {
+                        lastTunedSpeed = q
+                        vm.setSpeed(q)
+                        haptic(.light)
+                        hudText = String(format: "%.1f", q) + " 倍速播放中"
+                    }
                     hudProgress = nil
                 case .none, .lockedByLongPress:
                     break

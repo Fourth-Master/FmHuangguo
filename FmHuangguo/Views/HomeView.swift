@@ -8,6 +8,8 @@ struct DramaCard: View {
     let episodeLabel: String
     var scoreText: String = ""
     var tagText: String = ""
+    /// 封面底部附加内容（如收藏页的观看信息），位于集数标签上方
+    var bottomAccessory: AnyView? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -22,15 +24,22 @@ struct DramaCard: View {
                         .allowsHitTesting(false)
                 }
                 .overlay(alignment: .bottomLeading) {
-                    if !episodeLabel.isEmpty {
-                        Text(episodeLabel)
-                            .font(.system(size: 10, weight: .semibold))
-                            .padding(.horizontal, 7).padding(.vertical, 3)
-                            .background(Color.black.opacity(0.62))
-                            .foregroundColor(.white)
-                            .clipShape(Capsule())
-                            .padding(7)
+                    VStack(alignment: .leading, spacing: 5) {
+                        if let accessory = bottomAccessory {
+                            accessory
+                        }
+                        if !episodeLabel.isEmpty {
+                            Text(episodeLabel)
+                                .font(.system(size: 10, weight: .semibold))
+                                .padding(.horizontal, 7).padding(.vertical, 3)
+                                .background(Color.black.opacity(0.62))
+                                .foregroundColor(.white)
+                                .clipShape(Capsule())
+                        }
                     }
+                    .padding(7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .allowsHitTesting(false)
                 }
                 .overlay(alignment: .topTrailing) {
                     if !scoreText.isEmpty {
@@ -170,7 +179,7 @@ struct HomeView: View {
             hotTagsRow
             content
         }
-        .navigationTitle("Fm黄果")
+        .navigationTitle("FM短剧")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {

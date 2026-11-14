@@ -232,7 +232,8 @@ struct FavoritesView: View {
         let record = lib.progress(dramaId: fav.dramaId)
         DramaCard(title: fav.title,
                   cover: fav.cover,
-                  episodeLabel: favEpisodeLabel(fav))
+                  episodeLabel: favEpisodeLabel(fav),
+                  bottomAccessory: watchAccessory(record))
             .overlay(alignment: .topTrailing) {
                 if hasNew {
                     Text("NEW")
@@ -245,29 +246,29 @@ struct FavoritesView: View {
                         .padding(6)
                 }
             }
-            .overlay(alignment: .bottom) {
-                // 观看信息：看过这部剧时显示看到第几集 + 进度条
-                if let rec = record {
-                    VStack(spacing: 4) {
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Color.white.opacity(0.35))
-                                Capsule()
-                                    .fill(Color.accentColor)
-                                    .frame(width: geo.size.width * watchFraction(rec))
-                            }
-                        }
-                        .frame(height: 3)
-                        Text("看到第\(rec.epNum)集 \(fmtTime(rec.position)) / \(fmtTime(rec.duration))")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
+    }
+
+    /// 观看信息附件（放进封面底部：进度条 + 看到第几集，不与标题重叠）
+    private func watchAccessory(_ rec: PlayRecord?) -> AnyView? {
+        guard let rec = rec else { return nil }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 4) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.35))
+                        Capsule()
+                            .fill(Color.accentColor)
+                            .frame(width: geo.size.width * watchFraction(rec))
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 7)
-                    .allowsHitTesting(false)
                 }
+                .frame(height: 3)
+                Text("看到第\(rec.epNum)集 \(fmtTime(rec.position)) / \(fmtTime(rec.duration))")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
+        )
     }
 
     private func watchFraction(_ rec: PlayRecord) -> CGFloat {
