@@ -9,10 +9,15 @@ struct SettingsView: View {
     @EnvironmentObject private var theme: ThemePrefs
     @State private var cacheCleared = false
     @State private var logCleared = false
-    @State private var showLogViewer = false
-    @State private var shareSheetActive = false
-    @State private var showSpeedEditor = false
-    @State private var speedInput = ""
+    /// iOS 15 同一视图挂多个 .sheet 只有一个生效——统一走 item 驱动的单 sheet
+    @State private var activeSheet: SettingsSheet?
+    /// 长按倍速行内编辑框内容（直接在设置页改数字，不弹窗）
+    @State private var speedText = ""
+
+    enum SettingsSheet: Identifiable {
+        case logViewer, shareLog
+        var id: Self { self }
+    }
 
     var body: some View {
         Form {
@@ -28,10 +33,11 @@ struct SettingsView: View {
                 .font(.system(size: 14))
             }
 
-            Section(header: Text("长按倍速调整"), footer: Text("长按画面时临时应用该倍速，松开恢复原速。范围 0.5x~5.0x。")) {
+            Section(header: Text("长按倍速调整"), footer: Text("长按画面时临时应用该倍速，松开恢复原速。可直接改数字，或用 −/+ 微调。范围 0.5x~5.0x。")) {
                 HStack(spacing: 16) {
                     Button {
                         speedPrefs.adjust(-0.1)
+                        speedText = String(format: "%.1f", speedPrefs.longPressSpeed)
                     } label: {
                         Image(systemName: "minus.circle.fill")
                             .font(.system(size: 26))
@@ -39,25 +45,32 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.plain)
                     Spacer()
-                    // 点击数字可直接编辑（sheet 编辑器：iOS 15 的 alert 不支持
-                    // 嵌入 TextField，iOS 16 才有，低版本只弹壳没法输入）
-                    Button {
-                        speedInput = String(format: "%.1f", speedPrefs.longPressSpeed)
-                        showSpeedEditor = true
-                    } label: {
-                        Text(String(format: "%.1fx", speedPrefs.longPressSpeed))
-                            .font(.system(size: 22, weight: .bold, design: .monospaced))
-                            .foregroundColor(.accentColor)
-                            .padding(.horizontal, 10).padding(.vertical, 4)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
-                            )
-                    }
-                    .buttonStyle(.plain)
+                    // 行内直接编辑：iOS 15 上 alert 不支持嵌输入框、sheet 又与
+                    // 同视图其他 sheet 冲突，直接在数字处改最稳
+                    TextField("0.5~5.0", text: $speedText)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.center)
+                        .font(.system(size: 22, weight: .bold, design: .monospaced))
+                        .foregroundColor(.accentColor)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+                        )
+                        .frame(width: 96)
+                        .onAppear {
+                            speedText = String(format: "%.1f", speedPrefs.longPressSpeed)
+                        }
+                        .onChange(of: speedText) { t in
+                            // 输入合法值即时生效（非法/越界输入不提交）
+                            if let v = Double(t), v >= 0.5, v <= 5.0 {
+                                speedPrefs.set(v)
+                            }
+                        }
                     Spacer()
                     Button {
                         speedPrefs.adjust(0.1)
+                        speedText = String(format: "%.1f", speedPrefs.longPressSpeed)
                     } label: {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 26))
@@ -143,7 +156,7 @@ struct SettingsView: View {
 
             Section(header: Text("调试")) {
                 Button {
-                    showLogViewer = true
+                    activeSheet = .logViewer
                 } label: {
                     Label("查看调试日志", systemImage: "doc.text.magnifyingglass")
                         .font(.system(size: 14))
@@ -181,85 +194,21 @@ struct SettingsView: View {
         .alert("日志已清空", isPresented: $logCleared) {
             Button("确定", role: .cancel) {}
         }
-        .sheet(isPresented: $showLogViewer) {
-            DebugLogViewer()
-        }
-        .sheet(isPresented: $shareSheetActive) {
-            ActivitySheet(items: [DebugLogger.shared.fileForSharing])
-        }
-        .sheet(isPresented: $showSpeedEditor) {
-            speedEditor
-        }
-    }
-
-    // MARK: 长按倍速编辑器（sheet：iOS 15 alert 无法嵌输入框）
-
-    private var speedEditor: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                Text("长按画面时临时应用该倍速，松开恢复原速。\n范围 0.5~5.0，步进 0.1。")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-
-                TextField("倍速（0.5~5.0）", text: $speedInput)
-                    .keyboardType(.decimalPad)
-                    .multilineTextAlignment(.center)
-                    .font(.system(size: 30, weight: .bold, design: .monospaced))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 180)
-
-                HStack(spacing: 28) {
-                    Button {
-                        speedPrefs.adjust(-0.1)
-                        speedInput = String(format: "%.1f", speedPrefs.longPressSpeed)
-                    } label: {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.system(size: 34))
-                            .foregroundColor(.accentColor)
-                    }
-                    Text(String(format: "%.1fx", speedPrefs.longPressSpeed))
-                        .font(.system(size: 26, weight: .bold, design: .monospaced))
-                        .frame(minWidth: 80)
-                    Button {
-                        speedPrefs.adjust(0.1)
-                        speedInput = String(format: "%.1f", speedPrefs.longPressSpeed)
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 34))
-                            .foregroundColor(.accentColor)
-                    }
-                }
-                Spacer()
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .logViewer:
+                DebugLogViewer()
+            case .shareLog:
+                ActivitySheet(items: [DebugLogger.shared.fileForSharing])
             }
-            .padding(.top, 28)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("取消") { showSpeedEditor = false }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("确定") { applySpeedInput() }
-                }
-            }
-            .navigationTitle("长按倍速")
-            .navigationBarTitleDisplayMode(.inline)
         }
-        .navigationViewStyle(.stack)
-    }
-
-    private func applySpeedInput() {
-        let cleaned = speedInput.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "x", with: "")
-        if let v = Double(cleaned) {
-            speedPrefs.set((v * 10).rounded() / 10) // set 内部钳制 0.5~5.0 并量化 0.1
-        }
-        showSpeedEditor = false
     }
 
     private func shareLog() {
         // 确保日志已落盘
         DebugLogger.shared.log("---- 导出日志 ----")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            shareSheetActive = true
+            activeSheet = .shareLog
         }
     }
 

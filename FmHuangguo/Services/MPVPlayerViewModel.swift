@@ -73,7 +73,10 @@ final class MPVPlayerViewModel: NSObject, ObservableObject {
 
         // 渲染交给 render API（GLKView GLES），内核不再直接持有窗口
         mpv_set_option_string(mpv, "vo", "libmpv")
-        mpv_set_option_string(mpv, "hwdec", "videotoolbox")
+        // videotoolbox-copy：iOS GLES 上 VT 直连互操作的色彩矩阵声明有误 →
+        // 画面发绿（mpv#7846，MPVKit Demo 同样警告）。copy 模式硬解后拷出，
+        // 由 mpv 自行做 YUV→RGB，颜色正确；720p30 硬解+拷贝开销可接受
+        mpv_set_option_string(mpv, "hwdec", "videotoolbox-copy")
         mpv_set_option_string(mpv, "cache", "yes")
 
         let initStatus = mpv_initialize(mpv)

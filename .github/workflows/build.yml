@@ -86,14 +86,14 @@ jobs:
           mkdir -p build/Payload
           cp -R "$APP" build/Payload/
           cd build
-          zip -qry FmHuangguo-1.3.9.ipa Payload
-          ls -lh FmHuangguo-1.3.9.ipa
+          zip -qry FmHuangguo-1.3.10.ipa Payload
+          ls -lh FmHuangguo-1.3.10.ipa
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: FmHuangguo-ipa
-          path: build/FmHuangguo-1.3.9.ipa
+          path: build/FmHuangguo-1.3.10.ipa
           if-no-files-found: error
 
       - name: Publish to Release (latest)
@@ -101,14 +101,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat > /tmp/notes-src.md <<'NOTES'
-          Fm黄果 iOS 短剧播放器 v1.3.9（伪签名 ipa，需自行签名安装）
+          Fm黄果 iOS 短剧播放器 v1.3.10（伪签名 ipa，需自行签名安装）
 
-          - 长按后上下滑可微调倍速（每 30pt ±0.1），倍速统一一位小数
-          - 修复 iOS 15 设置页长按倍速无法编辑（alert 输入框是 iOS 16 API，
-            改用 sheet 编辑器）
-          - 渲染上下文升级 OpenGL ES 3（修复纹理格式 INVALID_ENUM）
-          - mpv（FFmpeg）单内核：高倍速音画同步；OpenGL ES 渲染 + VideoToolbox
-            硬解；播放链路与退出稳定性已修复
+          - 全新 App 图标
+          - 修复播放画面发绿（VideoToolbox 硬解改 copy 模式，mpv 自行做
+            色彩转换，规避 iOS GLES 互操作色彩矩阵错误 mpv#7846）
+          - 设置页倍速数字支持行内直接修改；修复 iOS 15 上查看日志/分享
+            弹窗不生效（同一视图多个 sheet 冲突，合并为单 sheet）
+          - mpv（FFmpeg）单内核：OpenGL ES3 渲染 + VideoToolbox 硬解，
+            高倍速音画同步
           - 日志记录 App 版本 + iOS 版本 + 机型
           - 深浅配色模式、热门标签直达、双击暂停、离线缓存、每日更新检测
           - 支持 iOS 15.4+
@@ -117,10 +118,10 @@ jobs:
           NOTES
           sed 's/^  //' /tmp/notes-src.md > /tmp/release-notes.md
           if gh release view latest >/dev/null 2>&1; then
-            gh release upload latest build/FmHuangguo-1.3.9.ipa --clobber
+            gh release upload latest build/FmHuangguo-1.3.10.ipa --clobber
           else
-            gh release create latest build/FmHuangguo-1.3.9.ipa \
-              --title "Fm黄果 v1.3.9" \
+            gh release create latest build/FmHuangguo-1.3.10.ipa \
+              --title "Fm黄果 v1.3.10" \
               --notes-file /tmp/release-notes.md \
               --latest
           fi
